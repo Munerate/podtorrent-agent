@@ -82,6 +82,14 @@ func (a *Agent) session(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
+	return a.Serve(ctx, conn, a.cfg.NetworkURL)
+}
+
+// Serve runs the node side of the protocol on an open connection, whichever
+// side opened it: the agent (outbound mode) or the network (inbound mode).
+func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(32 << 20)
 
@@ -97,7 +105,7 @@ func (a *Agent) session(ctx context.Context) error {
 	if welcome.Type != "welcome" {
 		return fmt.Errorf("expected welcome, got %q: %s", welcome.Type, welcome.Message)
 	}
-	a.cfg.Log.Info("connected", "node", welcome.Node, "network", a.cfg.NetworkURL)
+	a.cfg.Log.Info("connected", "node", welcome.Node, "network", peer)
 
 	// One pool of slots per model, as the manifest declares.
 	sems := map[string]chan struct{}{}

@@ -48,11 +48,20 @@ protocol spec, and stand-ins for both ends (`mock-engine`, `mock-network`).
 - WebSocket writes from many goroutines are safe: `coder/websocket` allows
   concurrent writers.
 
+## Inbound mode (`internal/agent/inbound.go`)
+
+`InboundHandler` serves `GET /v0/node/connect`: it checks the bearer token
+against the node token (constant-time), accepts the WebSocket, and runs the
+same `Serve` loop as outbound mode. A newer connection closes the older one.
+`TLSConfig` loads the server certificate and, with a client CA, requires and
+verifies client certificates. Outbound and inbound share all protocol code
+through `Serve(ctx, conn, peer)`.
+
 ## Design rules
 
 - The agent forwards bodies unchanged and never inspects or logs prompt
   content.
-- No inbound listener, no filesystem access beyond the manifest, no
-  dependency other than `github.com/coder/websocket`.
+- No inbound listener unless `-listen` is set, no filesystem access beyond the
+  manifest and TLS files, no dependency other than `github.com/coder/websocket`.
 - Protocol changes are additive: new message types and optional fields.
   Unknown types are ignored on both ends.

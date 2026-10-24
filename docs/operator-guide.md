@@ -12,7 +12,8 @@ How to connect your inference engine to the PodTorrent network with
   - token counts in `usage`, and in the final stream chunk when the request
     has `"stream_options": {"include_usage": true}` (the network sets this, to
     meter every request).
-- Outbound HTTPS (port 443) from the agent to the network.
+- Outbound HTTPS (port 443) from the agent to the network, or one of the
+  inbound and private-link setups in [connection modes](connection-modes.md).
 - A **node token** from the PodTorrent team. Keep it secret; it identifies
   your node.
 
@@ -58,7 +59,37 @@ Every value is a claim the network will check against measured behaviour.
 | `models[].context_max` | no | Longest prompt plus output accepted, in tokens. |
 | `models[].speed.single_tps` | no | Output tokens/s for one request alone. |
 | `models[].speed.batch_tps` | no | Total output tokens/s with all slots busy. |
+| `models[].interactive_reserve` | no | Slots batch work may not take, kept for interactive requests. |
+| `models[].cached_prompts` | no | Conversation openings your engine keeps processed: `[{ "name", "sha256", "tokens" }]`. See [Cached prompts](#cached-prompts). |
+| `models[].price` | no | Overrides `price` for this model. |
+| `tiers` | no | Work you accept: `["interactive", "batch"]` (default both). |
 | `price.per_mtok_in`, `price.per_mtok_out` | no | Your price per million input and output tokens, in USD. |
+| `price.per_mtok_in_cached` | no | Price for input tokens served from your cache (default `per_mtok_in`). |
+| `price.batch` | no | Your batch-tier price, same fields (default the main price). |
+
+### Tiers and pricing
+
+- **Interactive** requests have a person waiting: they go to the node with
+  the most free slots, for the best speed per request, and wait at most 10 s
+  for a slot.
+- **Batch** requests care about cost and throughput: they go to the node with
+  the *fewest* free slots that still has one, so batches fill up (cheaper per
+  token on batched hardware), and wait up to 2 minutes for a slot. They never
+  take `interactive_reserve` slots.
+- You set your own prices per tier and per model. Clients can set a maximum
+  price; nodes above it don't get the request. Clients see the price range
+  per model and tier on the network's offers list.
+
+### Cached prompts
+
+If clients send the same long opening (a system prompt, an agent framework's
+instructions), keep it processed in your engine's prefix cache and advertise
+it. The network sends requests that start with it to you first; you skip the
+work, and cached input tokens are billed at `per_mtok_in_cached`.
+
+The id is a SHA-256 of the opening messages (definition in the
+[spec](../spec/protocol-v0.md#cached-prompts)). Get it from the PodTorrent
+team or compute it with the spec's formula.
 
 ### Flags and environment
 
@@ -70,6 +101,7 @@ Every value is a claim the network will check against measured behaviour.
 | — | `PODTORRENT_NODE_TOKEN` | — | Node token (required) |
 | `-skip-engine-check` | — | off | Don't check `/v1/models` at start |
 | `-version` | — | — | Print the version and exit |
+| `-listen` and TLS flags | — | — | Inbound mode; see [connection modes](connection-modes.md) |
 
 ## Run
 

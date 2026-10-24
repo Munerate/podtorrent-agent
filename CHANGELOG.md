@@ -7,3 +7,6 @@
 - Manifest with per-model slots; engine check at start.
 - Protocol spec v0.
 - Mock engine and mock network.
+- Inbound mode (`-listen`), with TLS and mutual TLS.
+- Manifest: tiers, batch and cached-input prices, per-model prices,
+  `interactive_reserve`, `cached_prompts`.

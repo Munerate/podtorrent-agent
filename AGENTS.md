@@ -22,6 +22,7 @@ Go 1.24+ is required (`go.mod`). Run `gofmt -w` on changed files.
 ## Map
 
 - `internal/agent/agent.go` — link, slots, forwarding. Most changes land here.
+- `internal/agent/inbound.go` — inbound mode listener and TLS.
 - `internal/protocol/protocol.go` — wire types. Keep in sync with `spec/protocol-v0.md`.
 - `internal/mocknet`, `internal/mockengine` — test doubles, also shipped to operators.
 - `internal/e2e_test.go` — end-to-end tests; extend for observable behaviour.
@@ -31,8 +32,9 @@ Go 1.24+ is required (`go.mod`). Run `gofmt -w` on changed files.
 
 - Protocol changes are additive only (optional fields, new message types) and
   must update `spec/protocol-v0.md` in the same change.
-- Never log prompt or response content. Never add an inbound listener, file
-  access beyond the manifest, or a call to any engine path other than
+- Never log prompt or response content. Never open a listener except in
+  inbound mode (`-listen`), read files other than the manifest and TLS files,
+  or call any engine path other than
   `POST /v1/chat/completions` and `GET /v1/models`.
 - No new dependencies without the maintainers' agreement.
 - This repo is public: no customer or operator names, private hostnames,

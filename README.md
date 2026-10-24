@@ -8,8 +8,10 @@ engine** (vLLM, TensorRT-LLM, SGLang, llama.cpp server, or anything else that
 speaks the OpenAI API) to the PodTorrent network, so the network can send it
 inference requests.
 
-- **Outbound only.** The agent opens one TLS WebSocket to the network. No
-  inbound ports, works behind NAT and strict firewalls.
+- **Outbound by default.** The agent opens one TLS WebSocket to the network.
+  No inbound ports, works behind NAT and strict firewalls. Inbound mode with
+  mutual TLS and private links (Cloudflare Tunnel, your own WireGuard) are
+  also supported.
 - **Least privilege.** One static binary (~6 MB) or a distroless, non-root
   container. No GPU, no host disk, no root. It never downloads models.
 - **Your stack, untouched.** Requests go to your engine's
@@ -56,6 +58,7 @@ curl -N localhost:8787/v1/chat/completions -H 'Authorization: Bearer dev-api-key
 | Document | For |
 | --- | --- |
 | [Operator guide](docs/operator-guide.md) | Installing and running a node, manifest reference, troubleshooting |
+| [Connection modes](docs/connection-modes.md) | Outbound, inbound with mutual TLS, private links (Cloudflare Tunnel, your own WireGuard) |
 | [Protocol spec v0](spec/protocol-v0.md) | Writing your own agent or client for the network |
 | [Architecture](docs/architecture.md) | How the agent works inside |
 | [Roadmap](docs/roadmap.md) | What's done and what's next |

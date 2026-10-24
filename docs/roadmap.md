@@ -17,9 +17,12 @@
 
 ## Phase 2: batching and caching
 
-Interactive and batch tiers, cached-prompt advertising and routing, inbound
-mode (the network connects to the operator's endpoint over mutual TLS) and a
-private-link option (the agent connects over the operator's own VPN).
+| Item | Status |
+| --- | --- |
+| Manifest: tiers, per-tier and per-model prices, cached-input price, interactive reserve | Done |
+| Cached prompts in the manifest; id defined in the spec | Done |
+| Inbound mode: listener, node-token check, TLS and mutual TLS | Done |
+| Private links: Cloudflare Tunnel (standard), operator's own network via a connector | Documented; tunnel provisioning per node is an operations step |
 
 ## Phase 3: money and trust
 

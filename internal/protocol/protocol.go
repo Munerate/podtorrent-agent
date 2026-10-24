@@ -26,9 +26,10 @@ type Message struct {
 }
 
 type Manifest struct {
-	Node   string  `json:"node"`
-	Models []Model `json:"models"`
-	Price  *Price  `json:"price,omitempty"`
+	Node   string   `json:"node"`
+	Models []Model  `json:"models"`
+	Tiers  []string `json:"tiers,omitempty"` // "interactive", "batch"; default both
+	Price  *Price   `json:"price,omitempty"`
 }
 
 type Model struct {
@@ -37,6 +38,18 @@ type Model struct {
 	ContextMax int    `json:"context_max,omitempty"`
 	Slots      int    `json:"slots"`
 	Speed      *Speed `json:"speed,omitempty"`
+	// Slots batch work may not take, kept for interactive requests.
+	InteractiveReserve int            `json:"interactive_reserve,omitempty"`
+	CachedPrompts      []CachedPrompt `json:"cached_prompts,omitempty"`
+	Price              *Price         `json:"price,omitempty"` // overrides the node-wide price
+}
+
+// CachedPrompt is an opening of the conversation the engine keeps processed.
+// SHA256 is computed as in spec/protocol-v0.md ("Cached prompts").
+type CachedPrompt struct {
+	Name   string `json:"name"`
+	SHA256 string `json:"sha256"`
+	Tokens int    `json:"tokens,omitempty"`
 }
 
 type Speed struct {
@@ -45,8 +58,10 @@ type Speed struct {
 }
 
 type Price struct {
-	PerMtokIn  float64 `json:"per_mtok_in"`
-	PerMtokOut float64 `json:"per_mtok_out"`
+	PerMtokIn       float64 `json:"per_mtok_in"`
+	PerMtokOut      float64 `json:"per_mtok_out"`
+	PerMtokInCached float64 `json:"per_mtok_in_cached,omitempty"`
+	Batch           *Price  `json:"batch,omitempty"` // batch-tier price
 }
 
 // TotalSlots is the node-wide concurrency limit.
