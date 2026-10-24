@@ -25,6 +25,8 @@ protocol spec, and stand-ins for both ends (`mock-engine`, `mock-network`).
 | `cmd/podtorrent-agent` | CLI: flags, manifest loading, engine check, signal handling |
 | `cmd/mock-engine` | Fake OpenAI engine that echoes the prompt |
 | `cmd/mock-network` | Fake network: accepts nodes, serves `/v1/chat/completions` |
+| `cmd/podtorrent-conformance` | Protocol conformance checker (plays the network) |
+| `internal/conformance` | The checks behind it |
 | `internal/protocol` | Message and manifest types for protocol v0 |
 | `internal/agent` | The link: connect, hello/welcome, status, forwarding, reconnect |
 | `internal/mockengine`, `internal/mocknet` | Handlers behind the two mock commands |
@@ -47,6 +49,14 @@ protocol spec, and stand-ins for both ends (`mock-engine`, `mock-network`).
   pieces and sent as `response_chunk`s, then `response_end`.
 - WebSocket writes from many goroutines are safe: `coder/websocket` allows
   concurrent writers.
+
+## Slots, reload and metrics
+
+Slots are counters per model (`busy`) checked against the current manifest,
+so `SetManifest` can change models and slot counts while requests are in
+flight. Each session registers a channel; `SetManifest` signals it and the
+session sends a `manifest` message and a fresh `status`. `metrics.go` keeps
+counters and serves them in Prometheus text format.
 
 ## Inbound mode (`internal/agent/inbound.go`)
 

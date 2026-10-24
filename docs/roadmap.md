@@ -11,9 +11,9 @@
 | Protocol spec v0 | Done |
 | Mock engine and mock network for operators | Done |
 | Release workflow: binaries for 4 platforms, multi-arch container image | Done (no release published yet) |
-| Reload the manifest without a restart | Next |
-| `/metrics` on localhost | Next |
-| Conformance tests any third-party agent can run against `mock-network` | Next |
+| Reload the manifest without a restart (`manifest` message) | Done |
+| `/metrics` on localhost | Done |
+| Conformance tests any third-party agent can run (`podtorrent-conformance`) | Done |
 
 ## Phase 2: batching and caching
 

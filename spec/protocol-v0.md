@@ -1,7 +1,8 @@
 # PodTorrent node protocol, v0
 
 Status: draft, phase 1. Anything that implements this document is a valid
-PodTorrent node; `podtorrent-agent` is the reference implementation.
+PodTorrent node; `podtorrent-agent` is the reference implementation, and
+`podtorrent-conformance` checks any implementation against it.
 
 ## Transport
 
@@ -57,6 +58,14 @@ it changes, and every 30 s. The network routes on `free_by_model`.
 ```json
 { "type": "status", "free_slots": 31,
   "free_by_model": { "meta-llama/llama-3.3-70b": 31 } }
+```
+
+`manifest` — the node's manifest changed (for example the operator added a
+model). Replaces the one from `hello`; followed by a `status`. Requests in
+flight are unaffected.
+
+```json
+{ "type": "manifest", "manifest": { ...see Manifest... } }
 ```
 
 `response_start` — the engine answered a request.

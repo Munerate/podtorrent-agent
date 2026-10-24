@@ -98,6 +98,12 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch m.Type {
+		case "manifest":
+			if m.Manifest != nil {
+				s.mu.Lock()
+				n.manifest = *m.Manifest
+				s.mu.Unlock()
+			}
 		case "status":
 			s.mu.Lock()
 			n.free = m.FreeByModel

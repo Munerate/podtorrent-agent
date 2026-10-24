@@ -33,10 +33,14 @@ type Config struct {
 }
 
 type Agent struct {
-	cfg Config
+	cfg     Config
+	Metrics *Metrics
 
 	mu       sync.Mutex
 	inFlight map[string]context.CancelFunc
+	manifest protocol.Manifest      // current; guarded by mu
+	busy     map[string]int         // requests in flight per model; guarded by mu
+	notify   map[chan struct{}]bool // sessions to tell about manifest changes; guarded by mu
 }
 
 func New(cfg Config) *Agent {
@@ -47,7 +51,62 @@ func New(cfg Config) *Agent {
 		cfg.HTTPClient = &http.Client{}
 	}
 	cfg.EngineURL = strings.TrimRight(cfg.EngineURL, "/")
-	return &Agent{cfg: cfg, inFlight: map[string]context.CancelFunc{}}
+	return &Agent{cfg: cfg, Metrics: NewMetrics(), inFlight: map[string]context.CancelFunc{},
+		manifest: cfg.Manifest, busy: map[string]int{}, notify: map[chan struct{}]bool{}}
+}
+
+// SetManifest replaces the manifest. Connected sessions send it to the
+// network at once (a "manifest" message); requests in flight are unaffected.
+func (a *Agent) SetManifest(m protocol.Manifest) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.manifest = m
+	for ch := range a.notify {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (a *Agent) Manifest() protocol.Manifest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.manifest
+}
+
+// acquire takes a slot for model, or says why not.
+func (a *Agent) acquire(model string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, mod := range a.manifest.Models {
+		if mod.ID == model {
+			if a.busy[model] >= mod.Slots {
+				return errors.New("no free slots")
+			}
+			a.busy[model]++
+			return nil
+		}
+	}
+	return errors.New("model not served by this node")
+}
+
+func (a *Agent) release(model string) {
+	a.mu.Lock()
+	a.busy[model]--
+	a.mu.Unlock()
+}
+
+// free reports free slots per model and in total.
+func (a *Agent) free() (int, map[string]int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	total, by := 0, map[string]int{}
+	for _, mod := range a.manifest.Models {
+		by[mod.ID] = max(0, mod.Slots-a.busy[mod.ID])
+		total += by[mod.ID]
+	}
+	return total, by
 }
 
 // Run keeps the link up until ctx ends, reconnecting with backoff.
@@ -95,7 +154,8 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 
 	send := func(m protocol.Message) error { return wsjson.Write(ctx, conn, m) }
 
-	if err := send(protocol.Message{Type: "hello", Protocol: protocol.Int(protocol.Version), Agent: Name, Manifest: &a.cfg.Manifest}); err != nil {
+	manifest := a.Manifest()
+	if err := send(protocol.Message{Type: "hello", Protocol: protocol.Int(protocol.Version), Agent: Name, Manifest: &manifest}); err != nil {
 		return err
 	}
 	var welcome protocol.Message
@@ -106,24 +166,27 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 		return fmt.Errorf("expected welcome, got %q: %s", welcome.Type, welcome.Message)
 	}
 	a.cfg.Log.Info("connected", "node", welcome.Node, "network", peer)
+	a.Metrics.connected(true)
+	defer a.Metrics.connected(false)
 
-	// One pool of slots per model, as the manifest declares.
-	sems := map[string]chan struct{}{}
-	for _, mod := range a.cfg.Manifest.Models {
-		sems[mod.ID] = make(chan struct{}, mod.Slots)
-	}
 	var statusMu sync.Mutex
 	sendStatus := func() {
 		statusMu.Lock()
 		defer statusMu.Unlock()
-		total, byModel := 0, map[string]int{}
-		for id, sem := range sems {
-			byModel[id] = cap(sem) - len(sem)
-			total += byModel[id]
-		}
+		total, byModel := a.free()
 		_ = send(protocol.Message{Type: "status", FreeSlots: protocol.Int(total), FreeByModel: byModel})
 	}
 	sendStatus()
+
+	changed := make(chan struct{}, 1)
+	a.mu.Lock()
+	a.notify[changed] = true
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		delete(a.notify, changed)
+		a.mu.Unlock()
+	}()
 
 	go func() {
 		t := time.NewTicker(30 * time.Second)
@@ -134,6 +197,11 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 				return
 			case <-t.C:
 				sendStatus()
+			case <-changed:
+				m := a.Manifest()
+				_ = send(protocol.Message{Type: "manifest", Manifest: &m})
+				sendStatus()
+				a.cfg.Log.Info("manifest sent", "models", len(m.Models))
 			}
 		}
 	}()
@@ -145,21 +213,16 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 		}
 		switch m.Type {
 		case "request":
-			sem := sems[requestModel(m.Body)]
-			if sem == nil {
-				_ = send(protocol.Message{Type: "response_error", ID: m.ID, Message: "model not served by this node"})
-				continue
-			}
-			select {
-			case sem <- struct{}{}:
-			default:
-				_ = send(protocol.Message{Type: "response_error", ID: m.ID, Message: "no free slots"})
+			model := requestModel(m.Body)
+			if err := a.acquire(model); err != nil {
+				a.Metrics.request(model, "refused")
+				_ = send(protocol.Message{Type: "response_error", ID: m.ID, Message: err.Error()})
 				continue
 			}
 			sendStatus()
 			go func() {
-				a.forward(ctx, m, send)
-				<-sem
+				a.Metrics.request(model, a.forward(ctx, m, send))
+				a.release(model)
 				sendStatus()
 			}()
 		case "cancel":
@@ -219,7 +282,8 @@ func CheckEngine(ctx context.Context, client *http.Client, engineURL string, m p
 }
 
 // forward sends one request to the engine and streams the answer back.
-func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(protocol.Message) error) {
+// It returns the outcome for metrics: "ok", "engine_error" or "failed".
+func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(protocol.Message) error) (outcome string) {
 	ctx, cancel := context.WithCancel(ctx)
 	a.mu.Lock()
 	a.inFlight[m.ID] = cancel
@@ -231,6 +295,7 @@ func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(proto
 		a.mu.Unlock()
 	}()
 
+	outcome = "failed"
 	fail := func(err error) {
 		a.cfg.Log.Warn("request failed", "id", m.ID, "err", err)
 		_ = send(protocol.Message{Type: "response_error", ID: m.ID, Message: err.Error()})
@@ -273,4 +338,8 @@ func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(proto
 		}
 	}
 	_ = send(protocol.Message{Type: "response_end", ID: m.ID})
+	if resp.StatusCode >= 400 {
+		return "engine_error"
+	}
+	return "ok"
 }

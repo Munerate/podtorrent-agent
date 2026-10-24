@@ -95,12 +95,13 @@ team or compute it with the spec's formula.
 
 | Flag | Environment | Default | Meaning |
 | --- | --- | --- | --- |
-| `-network` | `PODTORRENT_NETWORK` | `wss://network.podtorrent.com/v0/node/connect` | Network link URL |
+| `-network` | `PODTORRENT_NETWORK` | `wss://api.podtorrent.com/v0/node/connect` | Network link URL |
 | `-engine` | `PODTORRENT_ENGINE` | `http://127.0.0.1:8000` | Your engine's base URL (without `/v1`) |
 | `-manifest` | `PODTORRENT_MANIFEST` | `manifest.json` | Manifest file |
 | — | `PODTORRENT_NODE_TOKEN` | — | Node token (required) |
 | `-skip-engine-check` | — | off | Don't check `/v1/models` at start |
 | `-version` | — | — | Print the version and exit |
+| `-metrics-listen` | `PODTORRENT_METRICS_LISTEN` | off | Serve Prometheus metrics at `/metrics`, e.g. `127.0.0.1:9100` |
 | `-listen` and TLS flags | — | — | Inbound mode; see [connection modes](connection-modes.md) |
 
 ## Run
@@ -140,6 +141,40 @@ networking.
    It refuses requests for models it doesn't serve or when that model's slots
    are full.
 5. If the link drops, reconnects with backoff (1 s up to 60 s).
+
+## Change the manifest without a restart
+
+Edit the manifest file. The agent notices within 5 seconds (or at once on
+`SIGHUP`), checks the engine serves every model in it, and sends it to the
+network. Requests in flight carry on. An invalid file is logged and ignored.
+
+## Metrics
+
+With `-metrics-listen 127.0.0.1:9100`, `GET /metrics` returns Prometheus text:
+
+| Metric | Meaning |
+| --- | --- |
+| `podtorrent_agent_connected` | 1 while the link is up |
+| `podtorrent_agent_connects_total` | Links established since start |
+| `podtorrent_agent_slots{model}` | Slots from the manifest |
+| `podtorrent_agent_busy_slots{model}` | Requests in flight |
+| `podtorrent_agent_requests_total{model,outcome}` | Requests: `ok`, `engine_error`, `failed`, `refused` |
+
+Keep it on localhost or your monitoring network; it has no authentication.
+
+## Check conformance
+
+`podtorrent-conformance` plays the network and checks a node follows the
+protocol, including with your real engine:
+
+```bash
+podtorrent-conformance -listen 127.0.0.1:8787 -token test &
+PODTORRENT_NODE_TOKEN=test podtorrent-agent -network ws://127.0.0.1:8787/v0/node/connect -engine http://127.0.0.1:8000 -manifest manifest.json
+```
+
+For an inbound node: `podtorrent-conformance -dial http://127.0.0.1:8443/v0/node/connect -token <node token>`.
+It exits 0 and prints `conformant` when every check passes. Writing your own
+agent? Run this against it.
 
 ## Test before going live
 
