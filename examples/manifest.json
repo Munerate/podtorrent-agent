@@ -1,0 +1,8 @@
+{
+  "node": "dev-node-01",
+  "models": [
+    { "id": "mock/echo-1", "quant": "none", "context_max": 8192, "slots": 4,
+      "speed": { "single_tps": 20, "batch_tps": 250 } }
+  ],
+  "price": { "per_mtok_in": 0.05, "per_mtok_out": 0.40 }
+}

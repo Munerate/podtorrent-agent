@@ -1,0 +1,268 @@
+// Package agent connects an operator's OpenAI-compatible engine to the
+// PodTorrent network over one outbound WebSocket (spec/protocol-v0.md).
+package agent
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
+
+	"github.com/Munerate/podtorrent-agent/internal/protocol"
+)
+
+const Name = "podtorrent-agent/0.1.0"
+
+type Config struct {
+	NetworkURL string // ws(s)://host/v0/node/connect
+	Token      string
+	EngineURL  string // e.g. http://127.0.0.1:8000
+	Manifest   protocol.Manifest
+	Log        *slog.Logger
+	HTTPClient *http.Client
+}
+
+type Agent struct {
+	cfg Config
+
+	mu       sync.Mutex
+	inFlight map[string]context.CancelFunc
+}
+
+func New(cfg Config) *Agent {
+	if cfg.Log == nil {
+		cfg.Log = slog.Default()
+	}
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = &http.Client{}
+	}
+	cfg.EngineURL = strings.TrimRight(cfg.EngineURL, "/")
+	return &Agent{cfg: cfg, inFlight: map[string]context.CancelFunc{}}
+}
+
+// Run keeps the link up until ctx ends, reconnecting with backoff.
+func (a *Agent) Run(ctx context.Context) error {
+	backoff := time.Second
+	for {
+		start := time.Now()
+		err := a.session(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if time.Since(start) > time.Minute {
+			backoff = time.Second
+		}
+		a.cfg.Log.Warn("link down, reconnecting", "err", err, "in", backoff)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, time.Minute)
+	}
+}
+
+func (a *Agent) session(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, a.cfg.NetworkURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + a.cfg.Token}},
+	})
+	if err != nil {
+		return fmt.Errorf("dial: %w", err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	conn.SetReadLimit(32 << 20)
+
+	send := func(m protocol.Message) error { return wsjson.Write(ctx, conn, m) }
+
+	if err := send(protocol.Message{Type: "hello", Protocol: protocol.Int(protocol.Version), Agent: Name, Manifest: &a.cfg.Manifest}); err != nil {
+		return err
+	}
+	var welcome protocol.Message
+	if err := wsjson.Read(ctx, conn, &welcome); err != nil {
+		return fmt.Errorf("waiting for welcome: %w", err)
+	}
+	if welcome.Type != "welcome" {
+		return fmt.Errorf("expected welcome, got %q: %s", welcome.Type, welcome.Message)
+	}
+	a.cfg.Log.Info("connected", "node", welcome.Node, "network", a.cfg.NetworkURL)
+
+	// One pool of slots per model, as the manifest declares.
+	sems := map[string]chan struct{}{}
+	for _, mod := range a.cfg.Manifest.Models {
+		sems[mod.ID] = make(chan struct{}, mod.Slots)
+	}
+	var statusMu sync.Mutex
+	sendStatus := func() {
+		statusMu.Lock()
+		defer statusMu.Unlock()
+		total, byModel := 0, map[string]int{}
+		for id, sem := range sems {
+			byModel[id] = cap(sem) - len(sem)
+			total += byModel[id]
+		}
+		_ = send(protocol.Message{Type: "status", FreeSlots: protocol.Int(total), FreeByModel: byModel})
+	}
+	sendStatus()
+
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				sendStatus()
+			}
+		}
+	}()
+
+	for {
+		var m protocol.Message
+		if err := wsjson.Read(ctx, conn, &m); err != nil {
+			return err
+		}
+		switch m.Type {
+		case "request":
+			sem := sems[requestModel(m.Body)]
+			if sem == nil {
+				_ = send(protocol.Message{Type: "response_error", ID: m.ID, Message: "model not served by this node"})
+				continue
+			}
+			select {
+			case sem <- struct{}{}:
+			default:
+				_ = send(protocol.Message{Type: "response_error", ID: m.ID, Message: "no free slots"})
+				continue
+			}
+			sendStatus()
+			go func() {
+				a.forward(ctx, m, send)
+				<-sem
+				sendStatus()
+			}()
+		case "cancel":
+			a.mu.Lock()
+			if c := a.inFlight[m.ID]; c != nil {
+				c()
+			}
+			a.mu.Unlock()
+		case "error":
+			return fmt.Errorf("network: %s", m.Message)
+		}
+	}
+}
+
+func requestModel(body []byte) string {
+	var head struct {
+		Model string `json:"model"`
+	}
+	_ = json.Unmarshal(body, &head)
+	return head.Model
+}
+
+// CheckEngine asks the engine which models it serves (GET /v1/models) and
+// returns the manifest models it does not list.
+func CheckEngine(ctx context.Context, client *http.Client, engineURL string, m protocol.Manifest) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(engineURL, "/")+"/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /v1/models: %s", resp.Status)
+	}
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("GET /v1/models: %w", err)
+	}
+	have := map[string]bool{}
+	for _, d := range list.Data {
+		have[d.ID] = true
+	}
+	var missing []string
+	for _, mod := range m.Models {
+		if !have[mod.ID] {
+			missing = append(missing, mod.ID)
+		}
+	}
+	return missing, nil
+}
+
+// forward sends one request to the engine and streams the answer back.
+func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(protocol.Message) error) {
+	ctx, cancel := context.WithCancel(ctx)
+	a.mu.Lock()
+	a.inFlight[m.ID] = cancel
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		delete(a.inFlight, m.ID)
+		a.mu.Unlock()
+	}()
+
+	fail := func(err error) {
+		a.cfg.Log.Warn("request failed", "id", m.ID, "err", err)
+		_ = send(protocol.Message{Type: "response_error", ID: m.ID, Message: err.Error()})
+	}
+	if m.Method != http.MethodPost || !protocol.AllowedPaths[m.Path] {
+		fail(fmt.Errorf("path not allowed: %s %s", m.Method, m.Path))
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.EngineURL+m.Path, bytes.NewReader(m.Body))
+	if err != nil {
+		fail(err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.cfg.HTTPClient.Do(req)
+	if err != nil {
+		fail(errors.New("engine unreachable"))
+		return
+	}
+	defer resp.Body.Close()
+
+	if err := send(protocol.Message{Type: "response_start", ID: m.ID, Status: resp.StatusCode,
+		Headers: map[string]string{"content-type": resp.Header.Get("Content-Type")}}); err != nil {
+		return
+	}
+	buf := make([]byte, 16<<10)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if serr := send(protocol.Message{Type: "response_chunk", ID: m.ID, Data: string(buf[:n])}); serr != nil {
+				return
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fail(err)
+			return
+		}
+	}
+	_ = send(protocol.Message{Type: "response_end", ID: m.ID})
+}
