@@ -49,8 +49,10 @@ the link on their own network:
 
 ```json
 { "type": "hello", "protocol": 0, "agent": "podtorrent-agent/0.1.0",
-  "manifest": { ...see Manifest... } }
+  "manifest": { ...see Manifest... }, "receipt_key": "<base64 Ed25519 public key>" }
 ```
+
+`receipt_key` is optional: a node that sends it signs receipts (see Receipts).
 
 `status` — free capacity, in total and per model. Sent after `hello`, whenever
 it changes, and every 30 s. The network routes on `free_by_model`.
@@ -94,13 +96,23 @@ body bytes as a UTF-8 string (OpenAI responses are JSON or SSE text).
 { "type": "response_error", "id": "req_123", "message": "engine unreachable" }
 ```
 
+`receipt` — the node's signed account of a finished request, sent after
+`response_end`. Optional; see Receipts.
+
+```json
+{ "type": "receipt", "id": "req_123", "receipt": "{\"id\":\"req_123\",...}", "sig": "<base64>" }
+```
+
 ### network → node
 
 `welcome` — reply to `hello`.
 
 ```json
-{ "type": "welcome", "protocol": 0, "node": "example-node-01" }
+{ "type": "welcome", "protocol": 0, "node": "example-node-01",
+  "receipt_key": "<base64 Ed25519 public key>" }
 ```
+
+`receipt_key` is optional: the network's key for its receipts.
 
 `request` — one inference request to forward to the local engine.
 
@@ -119,6 +131,9 @@ requests than the node's free slots, and a node may refuse extras with
 ```json
 { "type": "cancel", "id": "req_123" }
 ```
+
+`receipt` — the network's signed account of the same request, sent in reply
+to the node's `receipt`. Same shape as the node's.
 
 `error` — fatal; the network closes the link after sending it.
 
@@ -177,7 +192,35 @@ the network (`POST /v1/prompts`). A node that advertises an id gets requests
 that open with those messages, and should keep them processed in its engine's
 prefix cache.
 
-## Not in v0
+## Receipts
 
-Signed receipts are phase 3; they will be added as new message types without
-breaking v0 nodes.
+Both sides sign what they saw of each finished request, so neither can claim
+tokens the other did not see. Payment is made only for requests whose two
+receipts agree. Receipts hold counts only, never prompt or response content.
+
+- Keys are Ed25519. A node sends its public key as `receipt_key` in `hello`
+  (raw 32 bytes, standard base64); the network sends its own in `welcome`
+  and also publishes it at `GET /v0/network/keys`. A node may use a new key
+  on each start.
+- `receipt` is a JSON object serialised to a string; `sig` is the Ed25519
+  signature of that string's UTF-8 bytes, in standard base64. Verify the
+  string exactly as received, then parse it.
+- After `response_end`, the node sends its receipt:
+
+  | Field | Meaning |
+  | --- | --- |
+  | `id` | Request id. |
+  | `node` | Node id from `welcome`. |
+  | `model` | `model` from the request body. |
+  | `status` | Engine HTTP status. |
+  | `prompt_tokens`, `completion_tokens`, `cached_tokens` | From the engine's `usage` (`prompt_tokens_details.cached_tokens`), or `null` if it reported none. |
+  | `ts` | Unix milliseconds when the response ended. Informational. |
+
+- The network compares `id`, `node`, `model`, `status` and the three token
+  counts with its own reading of the response. It replies with its own
+  receipt: the same fields with its own values, plus `tier` and `cost_usd`
+  (at the node's manifest price; `null` for error statuses or missing
+  counts), and `node_sig`, the node's signature it accepted (or `null`).
+- A request whose receipts differ, or whose node sent none, is recorded
+  but not paid. Nodes that send no `receipt_key` keep working as before.
+- Extra fields are allowed in either receipt and are ignored when comparing.
