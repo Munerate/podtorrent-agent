@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Signed receipts: the agent makes an Ed25519 key at start, sends it in
+  `hello`, signs a `receipt` (token counts only) after each response, and
+  checks the network's countersigned receipt. New metric
+  `podtorrent_agent_network_receipts_total`. The mock network countersigns.
+
 ## 0.1.0 (2026-10-24)
 
 - Outbound WebSocket link with reconnect and status heartbeat.

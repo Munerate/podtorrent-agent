@@ -22,7 +22,8 @@ const model = "mock/echo-1"
 func TestHelloPath(t *testing.T) {
 	engine := httptest.NewServer(mockengine.Handler([]string{model}, time.Millisecond))
 	defer engine.Close()
-	net := httptest.NewServer(mocknet.New("node-token", "client-key").Handler())
+	mn := mocknet.New("node-token", "client-key")
+	net := httptest.NewServer(mn.Handler())
 	defer net.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -69,10 +70,25 @@ func TestHelloPath(t *testing.T) {
 		t.Fatalf("unexpected stream: %s", body)
 	}
 
+	// Each finished request produced a signed node receipt, and the agent
+	// checked the network's countersigned reply.
+	for deadline := time.Now().Add(2 * time.Second); mn.Receipts.Load() < 2 || !strings.Contains(metrics(a), `podtorrent_agent_network_receipts_total{result="matched"} 2`); {
+		if time.Now().After(deadline) {
+			t.Fatalf("receipts: network verified %d; agent metrics:\n%s", mn.Receipts.Load(), metrics(a))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
 	resp, _ = post(net.URL, "wrong", false)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("bad key status = %d", resp.StatusCode)
 	}
+}
+
+func metrics(a *agent.Agent) string {
+	w := httptest.NewRecorder()
+	a.MetricsHandler().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	return w.Body.String()
 }
 
 func post(base, key string, stream bool) (*http.Response, error) {

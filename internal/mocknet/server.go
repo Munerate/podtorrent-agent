@@ -6,6 +6,8 @@ package mocknet
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -25,6 +27,10 @@ type Server struct {
 	APIKey    string // key clients must present
 	Log       *slog.Logger
 
+	// Receipts counts node receipts whose signature checked out.
+	Receipts atomic.Int64
+
+	key   ed25519.PrivateKey
 	mu    sync.Mutex
 	nodes map[*node]bool
 	seq   atomic.Int64
@@ -39,7 +45,8 @@ type node struct {
 }
 
 func New(nodeToken, apiKey string) *Server {
-	return &Server{NodeToken: nodeToken, APIKey: apiKey, Log: slog.Default(), nodes: map[*node]bool{}}
+	_, key, _ := ed25519.GenerateKey(nil)
+	return &Server{NodeToken: nodeToken, APIKey: apiKey, Log: slog.Default(), key: key, nodes: map[*node]bool{}}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -73,7 +80,8 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := &node{conn: conn, manifest: *hello.Manifest, pending: map[string]chan protocol.Message{}}
-	if err := wsjson.Write(ctx, conn, protocol.Message{Type: "welcome", Protocol: protocol.Int(protocol.Version), Node: n.manifest.Node}); err != nil {
+	if err := wsjson.Write(ctx, conn, protocol.Message{Type: "welcome", Protocol: protocol.Int(protocol.Version), Node: n.manifest.Node,
+		ReceiptKey: base64.StdEncoding.EncodeToString(s.key.Public().(ed25519.PublicKey))}); err != nil {
 		return
 	}
 	s.mu.Lock()
@@ -108,6 +116,10 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			s.mu.Lock()
 			n.free = m.FreeByModel
 			s.mu.Unlock()
+		case "receipt":
+			if reply, ok := s.receipt(hello.ReceiptKey, m); ok {
+				_ = wsjson.Write(ctx, conn, reply)
+			}
 		case "response_start", "response_chunk", "response_end", "response_error":
 			n.mu.Lock()
 			ch := n.pending[m.ID]
@@ -117,6 +129,26 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// receipt checks a node's receipt and countersigns it. The mock network
+// doesn't meter responses, so it takes the node's counts as its own.
+func (s *Server) receipt(nodeKey string, m protocol.Message) (protocol.Message, bool) {
+	k, err1 := base64.StdEncoding.DecodeString(nodeKey)
+	sig, err2 := base64.StdEncoding.DecodeString(m.Sig)
+	if err1 != nil || err2 != nil || len(k) != ed25519.PublicKeySize || !ed25519.Verify(k, []byte(m.Receipt), sig) {
+		s.Log.Warn("bad node receipt", "id", m.ID)
+		return protocol.Message{}, false
+	}
+	var rc protocol.Receipt
+	if json.Unmarshal([]byte(m.Receipt), &rc) != nil {
+		return protocol.Message{}, false
+	}
+	s.Receipts.Add(1)
+	rc.Tier, rc.NodeSig = "interactive", &m.Sig
+	b, _ := json.Marshal(rc)
+	return protocol.Message{Type: "receipt", ID: m.ID, Receipt: string(b),
+		Sig: base64.StdEncoding.EncodeToString(ed25519.Sign(s.key, b))}, true
 }
 
 // pick returns a node serving model with a free slot, and reserves the slot.

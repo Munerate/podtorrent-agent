@@ -33,8 +33,9 @@ type Config struct {
 }
 
 type Agent struct {
-	cfg     Config
-	Metrics *Metrics
+	cfg      Config
+	Metrics  *Metrics
+	receipts *receipts
 
 	mu       sync.Mutex
 	inFlight map[string]context.CancelFunc
@@ -51,7 +52,7 @@ func New(cfg Config) *Agent {
 		cfg.HTTPClient = &http.Client{}
 	}
 	cfg.EngineURL = strings.TrimRight(cfg.EngineURL, "/")
-	return &Agent{cfg: cfg, Metrics: NewMetrics(), inFlight: map[string]context.CancelFunc{},
+	return &Agent{cfg: cfg, Metrics: NewMetrics(), receipts: newReceipts(), inFlight: map[string]context.CancelFunc{},
 		manifest: cfg.Manifest, busy: map[string]int{}, notify: map[chan struct{}]bool{}}
 }
 
@@ -155,7 +156,8 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 	send := func(m protocol.Message) error { return wsjson.Write(ctx, conn, m) }
 
 	manifest := a.Manifest()
-	if err := send(protocol.Message{Type: "hello", Protocol: protocol.Int(protocol.Version), Agent: Name, Manifest: &manifest}); err != nil {
+	if err := send(protocol.Message{Type: "hello", Protocol: protocol.Int(protocol.Version), Agent: Name, Manifest: &manifest,
+		ReceiptKey: a.receipts.publicKey()}); err != nil {
 		return err
 	}
 	var welcome protocol.Message
@@ -165,6 +167,7 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 	if welcome.Type != "welcome" {
 		return fmt.Errorf("expected welcome, got %q: %s", welcome.Type, welcome.Message)
 	}
+	a.receipts.setNetworkKey(welcome.ReceiptKey)
 	a.cfg.Log.Info("connected", "node", welcome.Node, "network", peer)
 	a.Metrics.connected(true)
 	defer a.Metrics.connected(false)
@@ -221,7 +224,7 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 			}
 			sendStatus()
 			go func() {
-				a.Metrics.request(model, a.forward(ctx, m, send))
+				a.Metrics.request(model, a.forward(ctx, m, welcome.Node, model, send))
 				a.release(model)
 				sendStatus()
 			}()
@@ -231,6 +234,12 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 				c()
 			}
 			a.mu.Unlock()
+		case "receipt":
+			result := a.receipts.check(m)
+			a.Metrics.receipt(result)
+			if result != "matched" {
+				a.cfg.Log.Warn("network receipt", "id", m.ID, "result", result)
+			}
 		case "error":
 			return fmt.Errorf("network: %s", m.Message)
 		}
@@ -283,7 +292,8 @@ func CheckEngine(ctx context.Context, client *http.Client, engineURL string, m p
 
 // forward sends one request to the engine and streams the answer back.
 // It returns the outcome for metrics: "ok", "engine_error" or "failed".
-func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(protocol.Message) error) (outcome string) {
+// After the response ends it sends this node's signed receipt.
+func (a *Agent) forward(ctx context.Context, m protocol.Message, node, model string, send func(protocol.Message) error) (outcome string) {
 	ctx, cancel := context.WithCancel(ctx)
 	a.mu.Lock()
 	a.inFlight[m.ID] = cancel
@@ -322,9 +332,11 @@ func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(proto
 		return
 	}
 	buf := make([]byte, 16<<10)
+	var tail usageTail
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {
+			tail.Write(buf[:n])
 			if serr := send(protocol.Message{Type: "response_chunk", ID: m.ID, Data: string(buf[:n])}); serr != nil {
 				return
 			}
@@ -337,7 +349,11 @@ func (a *Agent) forward(ctx context.Context, m protocol.Message, send func(proto
 			return
 		}
 	}
-	_ = send(protocol.Message{Type: "response_end", ID: m.ID})
+	if send(protocol.Message{Type: "response_end", ID: m.ID}) == nil {
+		p, c, cached := tail.counts()
+		_ = send(a.receipts.sign(protocol.Receipt{ID: m.ID, Node: node, Model: model, Status: resp.StatusCode,
+			PromptTokens: p, CompletionTokens: c, CachedTokens: cached, TS: time.Now().UnixMilli()}))
+	}
 	if resp.StatusCode >= 400 {
 		return "engine_error"
 	}

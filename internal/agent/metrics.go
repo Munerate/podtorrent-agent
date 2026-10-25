@@ -9,15 +9,24 @@ import (
 )
 
 // Metrics are the agent's own counters, served in Prometheus text format by
+func (m *Metrics) receipt(result string) {
+	m.mu.Lock()
+	m.receipts[result]++
+	m.mu.Unlock()
+}
+
 // MetricsHandler. They never include prompt or response content.
 type Metrics struct {
 	up       atomic.Int64
 	connects atomic.Int64
 	mu       sync.Mutex
 	requests map[[2]string]int64 // {model, outcome} -> count
+	receipts map[string]int64    // network receipt result -> count
 }
 
-func NewMetrics() *Metrics { return &Metrics{requests: map[[2]string]int64{}} }
+func NewMetrics() *Metrics {
+	return &Metrics{requests: map[[2]string]int64{}, receipts: map[string]int64{}}
+}
 
 func (m *Metrics) connected(up bool) {
 	if up {
@@ -62,6 +71,15 @@ func (a *Agent) MetricsHandler() http.Handler {
 		fmt.Fprint(w, "# HELP podtorrent_agent_requests_total Requests by model and outcome (ok, engine_error, failed, refused).\n# TYPE podtorrent_agent_requests_total counter\n")
 		for _, k := range keys {
 			fmt.Fprintf(w, "podtorrent_agent_requests_total{model=%q,outcome=%q} %d\n", k[0], k[1], m.requests[k])
+		}
+		results := make([]string, 0, len(m.receipts))
+		for k := range m.receipts {
+			results = append(results, k)
+		}
+		sort.Strings(results)
+		fmt.Fprint(w, "# HELP podtorrent_agent_network_receipts_total Network receipts by result (matched, mismatch, bad_signature, unknown).\n# TYPE podtorrent_agent_network_receipts_total counter\n")
+		for _, k := range results {
+			fmt.Fprintf(w, "podtorrent_agent_network_receipts_total{result=%q} %d\n", k, m.receipts[k])
 		}
 		m.mu.Unlock()
 	})

@@ -23,6 +23,32 @@ type Message struct {
 	Headers     map[string]string `json:"headers,omitempty"`
 	Data        string            `json:"data,omitempty"`
 	Message     string            `json:"message,omitempty"`
+	ReceiptKey  string            `json:"receipt_key,omitempty"` // base64 Ed25519 public key (hello, welcome)
+	Receipt     string            `json:"receipt,omitempty"`     // serialised Receipt; Sig signs these bytes
+	Sig         string            `json:"sig,omitempty"`
+}
+
+// Receipt is one side's account of a finished request (spec: "Receipts").
+// The network's receipt adds Tier, CostUSD and NodeSig.
+type Receipt struct {
+	ID               string   `json:"id"`
+	Node             string   `json:"node"`
+	Model            string   `json:"model"`
+	Status           int      `json:"status"`
+	PromptTokens     *int     `json:"prompt_tokens"`
+	CompletionTokens *int     `json:"completion_tokens"`
+	CachedTokens     *int     `json:"cached_tokens"`
+	TS               int64    `json:"ts"`
+	Tier             string   `json:"tier,omitempty"`
+	CostUSD          *float64 `json:"cost_usd,omitempty"`
+	NodeSig          *string  `json:"node_sig,omitempty"`
+}
+
+// SameCounts reports whether two receipts agree on the fields that are compared.
+func (r Receipt) SameCounts(o Receipt) bool {
+	eq := func(a, b *int) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+	return r.ID == o.ID && r.Node == o.Node && r.Model == o.Model && r.Status == o.Status &&
+		eq(r.PromptTokens, o.PromptTokens) && eq(r.CompletionTokens, o.CompletionTokens) && eq(r.CachedTokens, o.CachedTokens)
 }
 
 type Manifest struct {
