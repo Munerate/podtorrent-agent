@@ -56,6 +56,8 @@ type Manifest struct {
 	Models []Model  `json:"models"`
 	Tiers  []string `json:"tiers,omitempty"` // "interactive", "batch"; default both
 	Price  *Price   `json:"price,omitempty"`
+	// Declared full-load power draw, for tokens per watt on the dashboard.
+	PowerWatts float64 `json:"power_watts,omitempty"`
 }
 
 type Model struct {
@@ -68,6 +70,7 @@ type Model struct {
 	InteractiveReserve int            `json:"interactive_reserve,omitempty"`
 	CachedPrompts      []CachedPrompt `json:"cached_prompts,omitempty"`
 	Price              *Price         `json:"price,omitempty"` // overrides the node-wide price
+	PowerWatts         float64        `json:"power_watts,omitempty"`
 }
 
 // CachedPrompt is an opening of the conversation the engine keeps processed.

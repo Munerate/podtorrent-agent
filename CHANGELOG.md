@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Manifest: optional declared `power_watts`, node-wide or per model, passed
+  to the network for tokens per watt on the operator dashboard.
+
 ## 0.2.0 (2026-10-25)
 
 - Signed receipts: the agent makes an Ed25519 key at start, sends it in
