@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-25)
 
 - Manifest: optional declared `power_watts`, node-wide or per model, passed
   to the network for tokens per watt on the operator dashboard.

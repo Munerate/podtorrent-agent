@@ -21,7 +21,7 @@ import (
 	"github.com/Munerate/podtorrent-agent/internal/protocol"
 )
 
-const Name = "podtorrent-agent/0.2.0"
+const Name = "podtorrent-agent/0.3.0"
 
 type Config struct {
 	NetworkURL string // ws(s)://host/v0/node/connect
