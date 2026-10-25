@@ -48,7 +48,7 @@ the link on their own network:
 `hello` — first message after connecting.
 
 ```json
-{ "type": "hello", "protocol": 0, "agent": "podtorrent-agent/0.1.0",
+{ "type": "hello", "protocol": 0, "agent": "podtorrent-agent/0.2.0",
   "manifest": { ...see Manifest... }, "receipt_key": "<base64 Ed25519 public key>" }
 ```
 
