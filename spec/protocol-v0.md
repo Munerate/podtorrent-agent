@@ -155,7 +155,7 @@ Sent in `hello`. Extra fields are allowed and ignored.
   },
   "models": [
     { "id": "meta-llama/llama-3.3-70b", "quant": "fp8",
-      "context_max": 32768, "slots": 32, "interactive_reserve": 4,
+      "context_max": 32768, "slots": 32, "interactive_reserve": 4, "power_watts": 1400,
       "speed": { "single_tps": 20, "batch_tps": 250 },
       "cached_prompts": [
         { "name": "agent-system-v3", "sha256": "9c1e…", "tokens": 20480 }
@@ -170,6 +170,7 @@ Sent in `hello`. Extra fields are allowed and ignored.
 | `price` | USD per million tokens. `per_mtok_in_cached` applies to input tokens served from cache (default `per_mtok_in`). `batch` is the batch-tier price (default the main price). |
 | `models[].price` | Same shape; overrides `price` for that model. |
 | `models[].interactive_reserve` | Slots that batch work may not use, kept free for interactive requests. |
+| `power_watts` | Optional, declared by the operator: typical power draw in watts while serving at full load. Node-wide, or per model in `models[].power_watts`. Used for tokens per watt on the operator dashboard; not used for routing. |
 | `models[].cached_prompts` | Openings of the conversation the engine keeps processed (see below). |
 
 - `models[].id` is matched exactly against the client's `model`.
