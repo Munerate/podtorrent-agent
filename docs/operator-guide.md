@@ -12,6 +12,10 @@ How to connect your inference engine to the PodTorrent network with
   - token counts in `usage`, and in the final stream chunk when the request
     has `"stream_options": {"include_usage": true}` (the network sets this, to
     meter every request).
+  - For video models (`"modality": "video"` in the manifest, priced with
+    `price.per_video_second`): the OpenAI-style job API `POST /v1/videos`,
+    `GET /v1/videos/{id}` and `GET /v1/videos/{id}/content`. Keep finished
+    clips for at least an hour. See the protocol spec, section Video.
 - Outbound HTTPS (port 443) from the agent to the network, or one of the
   inbound and private-link setups in [connection modes](connection-modes.md).
 - A **node token** from the PodTorrent team. Keep it secret; it identifies

@@ -24,7 +24,7 @@ protocol spec, and stand-ins for both ends (`mock-engine`, `mock-network`).
 | --- | --- |
 | `cmd/podtorrent-agent` | CLI: flags, manifest loading, engine check, signal handling |
 | `cmd/mock-engine` | Fake OpenAI engine that echoes the prompt |
-| `cmd/mock-network` | Fake network: accepts nodes, serves `/v1/chat/completions` |
+| `cmd/mock-network` | Fake network: accepts nodes, serves `/v1/chat/completions` and `/v1/videos` |
 | `cmd/podtorrent-conformance` | Protocol conformance checker (plays the network) |
 | `internal/conformance` | The checks behind it |
 | `internal/protocol` | Message and manifest types for protocol v0 |
@@ -44,9 +44,14 @@ protocol spec, and stand-ins for both ends (`mock-engine`, `mock-network`).
   `response_error`. `status` reports free slots per model
   (`free_by_model`) and in total.
 - **Forwarding:** each request runs in its own goroutine with a cancellable
-  context, registered in `inFlight` so `cancel` can abort it. Only
-  `POST /v1/chat/completions` is allowed. The engine's body is read in 16 KiB
-  pieces and sent as `response_chunk`s, then `response_end`.
+  context, registered in `inFlight` so `cancel` can abort it. Only the
+  requests in `protocol.Allowed` (chat, and the video job paths) are
+  forwarded. The engine's body is read in 16 KiB pieces and sent as
+  `response_chunk`s (base64 for video content), then `response_end`.
+- **Video jobs:** after an accepted `POST /v1/videos`, `watchJob` keeps the
+  slot and checks `GET /v1/videos/{id}` on the engine every `JobPoll` until
+  `completed` or `failed`, then frees the slot and sends the receipt on the
+  current session. Status and content requests take no slot.
 - WebSocket writes from many goroutines are safe: `coder/websocket` allows
   concurrent writers.
 

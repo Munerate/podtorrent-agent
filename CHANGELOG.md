@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+- Video generation (spec: Video): models may set `modality: "video"` and
+  `price.per_video_second`. The agent forwards `POST /v1/videos`, holds the
+  slot until the engine finishes the job (checked every `JobPoll`, 2 s), then
+  sends a receipt with `video_seconds` and `size`. Job status and content
+  (`GET /v1/videos/{id}`, `/content`) take no slot; content goes as base64
+  `response_chunk`s (`encoding: "base64"`).
+- Mock engine runs fake video jobs; mock network routes `/v1/videos`.
+
 ## 0.3.0 (2026-10-25)
 
 - Manifest: optional declared `power_watts`, node-wide or per model, passed

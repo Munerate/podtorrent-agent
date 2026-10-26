@@ -35,7 +35,8 @@ Go 1.24+ is required (`go.mod`). Run `gofmt -w` on changed files.
 - Never log prompt or response content. Never open a listener except in
   inbound mode (`-listen`), read files other than the manifest and TLS files,
   or call any engine path other than
-  `POST /v1/chat/completions` and `GET /v1/models`.
+  `POST /v1/chat/completions`, `GET /v1/models` and the video job paths in
+  the spec (`protocol.Allowed`).
 - No new dependencies without the maintainers' agreement.
 - This repo is public: no customer or operator names, private hostnames,
   account ids, tokens or internal discussion in code, docs, tests or commit
