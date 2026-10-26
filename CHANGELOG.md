@@ -9,6 +9,8 @@
   (`GET /v1/videos/{id}`, `/content`) take no slot; content goes as base64
   `response_chunk`s (`encoding: "base64"`).
 - Mock engine runs fake video jobs; mock network routes `/v1/videos`.
+- `docs/agent-prompts.md`: prompts for an operator's coding agent to survey
+  the engine, write a video job adapter, and test the node locally.
 
 ## 0.3.0 (2026-10-25)
 
