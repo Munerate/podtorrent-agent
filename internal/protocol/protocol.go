@@ -2,7 +2,10 @@
 // See spec/protocol-v0.md.
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const Version = 0
 
@@ -22,6 +25,7 @@ type Message struct {
 	Status      int               `json:"status,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	Data        string            `json:"data,omitempty"`
+	Encoding    string            `json:"encoding,omitempty"` // "base64" for binary response_chunk data
 	Message     string            `json:"message,omitempty"`
 	ReceiptKey  string            `json:"receipt_key,omitempty"` // base64 Ed25519 public key (hello, welcome)
 	Receipt     string            `json:"receipt,omitempty"`     // serialised Receipt; Sig signs these bytes
@@ -38,6 +42,8 @@ type Receipt struct {
 	PromptTokens     *int     `json:"prompt_tokens"`
 	CompletionTokens *int     `json:"completion_tokens"`
 	CachedTokens     *int     `json:"cached_tokens"`
+	VideoSeconds     *float64 `json:"video_seconds,omitempty"` // video jobs only
+	Size             string   `json:"size,omitempty"`          // video jobs only
 	TS               int64    `json:"ts"`
 	Tier             string   `json:"tier,omitempty"`
 	CostUSD          *float64 `json:"cost_usd,omitempty"`
@@ -47,8 +53,10 @@ type Receipt struct {
 // SameCounts reports whether two receipts agree on the fields that are compared.
 func (r Receipt) SameCounts(o Receipt) bool {
 	eq := func(a, b *int) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+	eqf := func(a, b *float64) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
 	return r.ID == o.ID && r.Node == o.Node && r.Model == o.Model && r.Status == o.Status &&
-		eq(r.PromptTokens, o.PromptTokens) && eq(r.CompletionTokens, o.CompletionTokens) && eq(r.CachedTokens, o.CachedTokens)
+		eq(r.PromptTokens, o.PromptTokens) && eq(r.CompletionTokens, o.CompletionTokens) && eq(r.CachedTokens, o.CachedTokens) &&
+		eqf(r.VideoSeconds, o.VideoSeconds)
 }
 
 type Manifest struct {
@@ -71,6 +79,7 @@ type Model struct {
 	CachedPrompts      []CachedPrompt `json:"cached_prompts,omitempty"`
 	Price              *Price         `json:"price,omitempty"` // overrides the node-wide price
 	PowerWatts         float64        `json:"power_watts,omitempty"`
+	Modality           string         `json:"modality,omitempty"` // "text" (default) or "video"
 }
 
 // CachedPrompt is an opening of the conversation the engine keeps processed.
@@ -90,7 +99,8 @@ type Price struct {
 	PerMtokIn       float64 `json:"per_mtok_in"`
 	PerMtokOut      float64 `json:"per_mtok_out"`
 	PerMtokInCached float64 `json:"per_mtok_in_cached,omitempty"`
-	Batch           *Price  `json:"batch,omitempty"` // batch-tier price
+	PerVideoSecond  float64 `json:"per_video_second,omitempty"` // video models
+	Batch           *Price  `json:"batch,omitempty"`            // batch-tier price
 }
 
 // TotalSlots is the node-wide concurrency limit.
@@ -102,7 +112,38 @@ func (m *Manifest) TotalSlots() int {
 	return n
 }
 
-// AllowedPaths are the engine paths the network may ask a node to call.
-var AllowedPaths = map[string]bool{"/v1/chat/completions": true}
+// Allowed reports whether the network may ask a node to call method path on
+// its engine (spec: the request table).
+func Allowed(method, path string) bool {
+	switch method {
+	case "POST":
+		return path == "/v1/chat/completions" || path == "/v1/videos"
+	case "GET":
+		id, rest, _ := strings.Cut(strings.TrimPrefix(path, "/v1/videos/"), "/")
+		return strings.HasPrefix(path, "/v1/videos/") && validJobID(id) && (rest == "" || rest == "content")
+	}
+	return false
+}
+
+// VideoJobID returns the job id in a video status or content path, or "".
+func VideoJobID(path string) string {
+	id, _, _ := strings.Cut(strings.TrimPrefix(path, "/v1/videos/"), "/")
+	return id
+}
+
+func validJobID(id string) bool {
+	if id == "" || len(id) > 128 {
+		return false
+	}
+	if id == "." || id == ".." {
+		return false
+	}
+	for _, c := range id {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' && c != '-' && c != '.' {
+			return false
+		}
+	}
+	return true
+}
 
 func Int(v int) *int { return &v }

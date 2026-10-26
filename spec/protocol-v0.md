@@ -84,6 +84,10 @@ body bytes as a UTF-8 string (OpenAI responses are JSON or SSE text).
 { "type": "response_chunk", "id": "req_123", "data": "data: {...}\n\n" }
 ```
 
+For binary bodies (video content) the node sets `"encoding": "base64"` and
+`data` is the bytes in standard base64. Each chunk is encoded on its own.
+Without `encoding`, `data` is UTF-8 text as above.
+
 `response_end` — the response finished.
 
 ```json
@@ -121,8 +125,16 @@ body bytes as a UTF-8 string (OpenAI responses are JSON or SSE text).
   "path": "/v1/chat/completions", "body": { ...OpenAI request JSON... } }
 ```
 
-`path` is always one of the allowed paths (v0: `/v1/chat/completions`). The
-node forwards `body` unchanged. The network never sends more concurrent
+`method` and `path` are always one of the allowed requests:
+
+| Method | Path | Body | Slot |
+| --- | --- | --- | --- |
+| `POST` | `/v1/chat/completions` | OpenAI chat request | held until `response_end` |
+| `POST` | `/v1/videos` | video job (see Video) | held until the job ends |
+| `GET` | `/v1/videos/{id}` | none | none |
+| `GET` | `/v1/videos/{id}/content` | none | none |
+
+`{id}` is the engine's job id. The node forwards `body` unchanged. The network never sends more concurrent
 requests than the node's free slots, and a node may refuse extras with
 `response_error`.
 
@@ -172,11 +184,46 @@ Sent in `hello`. Extra fields are allowed and ignored.
 | `models[].interactive_reserve` | Slots that batch work may not use, kept free for interactive requests. |
 | `power_watts` | Optional, declared by the operator: typical power draw in watts while serving at full load. Node-wide, or per model in `models[].power_watts`. Used for tokens per watt on the operator dashboard; not used for routing. |
 | `models[].cached_prompts` | Openings of the conversation the engine keeps processed (see below). |
+| `models[].modality` | `text` (default) or `video`. Video models get only the video requests; text models only chat. |
+| `per_video_second` | In `price` (node-wide or per model, and in `batch`): USD per second of generated video. Used for `video` models instead of the token prices, which may then be omitted. |
 
 - `models[].id` is matched exactly against the client's `model`.
 - `slots` is the most concurrent requests the node accepts for that model.
   Each model has its own pool; a request for a model not in the manifest, or
   whose pool is full, gets `response_error`.
+
+## Video
+
+Video generation is an asynchronous job, shaped after OpenAI's videos API.
+The network sends `POST /v1/videos` with a body such as
+
+```json
+{ "model": "example/video-1", "prompt": "…", "seconds": "6", "size": "1280x720" }
+```
+
+and the engine answers with a job object:
+
+```json
+{ "id": "video_abc", "object": "video", "model": "example/video-1", "status": "queued",
+  "progress": 0, "seconds": "6", "size": "1280x720", "created_at": 1761400000 }
+```
+
+`status` is `queued`, `in_progress`, `completed` or `failed`; `seconds` may be
+a string or a number. The network later asks for `GET /v1/videos/{id}` (same
+object) and, once `completed`, `GET /v1/videos/{id}/content` (the clip,
+usually `video/mp4`, sent as base64 chunks).
+
+- The job holds its slot from the `POST` until the engine reports `completed`
+  or `failed`; the node watches the job itself and shows the slot as busy in
+  `status` until then. Status and content requests take no slot.
+- The clip stays on the node; the network passes it through and never stores
+  it. A node keeps finished clips for at least one hour and may delete them
+  after that (content requests then get the engine's 404).
+- When the job ends, the node sends its `receipt` with the `id` of the `POST`
+  request, `status` 200 for `completed` or 500 for `failed`, the token counts
+  `null`, and `video_seconds` (the engine's `seconds` as a number) and `size`.
+  The network compares `video_seconds` too, and prices it at
+  `per_video_second`.
 
 ## Cached prompts
 
@@ -215,10 +262,11 @@ receipts agree. Receipts hold counts only, never prompt or response content.
   | `model` | `model` from the request body. |
   | `status` | Engine HTTP status. |
   | `prompt_tokens`, `completion_tokens`, `cached_tokens` | From the engine's `usage` (`prompt_tokens_details.cached_tokens`), or `null` if it reported none. |
+  | `video_seconds`, `size` | Video jobs only (see Video); absent otherwise. |
   | `ts` | Unix milliseconds when the response ended. Informational. |
 
-- The network compares `id`, `node`, `model`, `status` and the three token
-  counts with its own reading of the response. It replies with its own
+- The network compares `id`, `node`, `model`, `status`, the three token
+  counts and `video_seconds` with its own reading of the response. It replies with its own
   receipt: the same fields with its own values, plus `tier` and `cost_usd`
   (at the node's manifest price; `null` for error statuses or missing
   counts), and `node_sig`, the node's signature it accepted (or `null`).

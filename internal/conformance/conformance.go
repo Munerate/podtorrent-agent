@@ -210,7 +210,7 @@ func Run(ctx context.Context, conn *websocket.Conn, prompt string, timeout time.
 	if err == nil && m.Type != "response_error" {
 		err = fmt.Errorf("got %q, want response_error", m.Type)
 	}
-	check("request for a path other than /v1/chat/completions gets response_error", err)
+	check("request for a path not in the spec gets response_error", err)
 
 	// 6. cancel: the node stops and frees the slot.
 	_ = s.send(ctx, protocol.Message{Type: "request", ID: "c-cancel", Method: "POST", Path: "/v1/chat/completions", Body: body(true, model)})

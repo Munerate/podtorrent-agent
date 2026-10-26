@@ -29,6 +29,7 @@ func main() {
 	clientCA := flag.String("client-ca", env("PODTORRENT_CLIENT_CA", ""), "inbound mode: require network client certificates signed by this CA (PEM)")
 	insecure := flag.Bool("insecure-plaintext", false, "inbound mode: serve without TLS (only behind a tunnel or for local tests)")
 	metricsListen := flag.String("metrics-listen", env("PODTORRENT_METRICS_LISTEN", ""), "serve Prometheus metrics at /metrics on this address (e.g. 127.0.0.1:9100)")
+	jobPoll := flag.Duration("job-poll", 2*time.Second, "how often to check a running video job on the engine")
 	manifestPath := flag.String("manifest", env("PODTORRENT_MANIFEST", "manifest.json"), "node manifest file")
 	flag.Parse()
 
@@ -51,7 +52,7 @@ func main() {
 	if !*skipCheck {
 		checkEngine(ctx, log, *engine, m)
 	}
-	a := agent.New(agent.Config{NetworkURL: *network, Token: token, EngineURL: *engine, Manifest: m, Log: log})
+	a := agent.New(agent.Config{NetworkURL: *network, Token: token, EngineURL: *engine, Manifest: m, Log: log, JobPoll: *jobPoll})
 	go watchManifest(ctx, log, a, *manifestPath, *engine, *skipCheck)
 	if *metricsListen != "" {
 		mux := http.NewServeMux()

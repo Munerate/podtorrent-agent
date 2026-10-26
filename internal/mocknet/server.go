@@ -1,10 +1,11 @@
 // Package mocknet is a minimal in-memory PodTorrent network: it accepts node
 // links on /v0/node/connect and serves an OpenAI-style /v1/chat/completions
-// that routes to a connected node. Operators can run it to test their node
+// and video job API (/v1/videos) that route to a connected node. Operators can run it to test their node
 // (or their own agent implementation) without touching the real network.
 package mocknet
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -33,6 +34,7 @@ type Server struct {
 	key   ed25519.PrivateKey
 	mu    sync.Mutex
 	nodes map[*node]bool
+	jobs  map[string]*node // video job id -> node; guarded by mu
 	seq   atomic.Int64
 }
 
@@ -46,7 +48,7 @@ type node struct {
 
 func New(nodeToken, apiKey string) *Server {
 	_, key, _ := ed25519.GenerateKey(nil)
-	return &Server{NodeToken: nodeToken, APIKey: apiKey, Log: slog.Default(), key: key, nodes: map[*node]bool{}}
+	return &Server{NodeToken: nodeToken, APIKey: apiKey, Log: slog.Default(), key: key, nodes: map[*node]bool{}, jobs: map[string]*node{}}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -54,6 +56,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v0/node/connect", s.connect)
 	mux.HandleFunc("POST /v1/chat/completions", s.chat)
 	mux.HandleFunc("GET /v1/models", s.models)
+	mux.HandleFunc("POST /v1/videos", s.chat)
+	mux.HandleFunc("GET /v1/videos/{id}", s.video)
+	mux.HandleFunc("GET /v1/videos/{id}/content", s.video)
 	return mux
 }
 
@@ -206,7 +211,44 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		openAIError(w, http.StatusServiceUnavailable, fmt.Sprintf("no node with a free slot serves %q", head.Model))
 		return
 	}
+	var job *bytes.Buffer
+	if r.URL.Path == "/v1/videos" {
+		job = &bytes.Buffer{}
+		defer func() {
+			var v struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(job.Bytes(), &v) == nil && v.ID != "" {
+				s.mu.Lock()
+				s.jobs[v.ID] = n
+				s.mu.Unlock()
+			}
+		}()
+	}
+	s.relay(w, r, n, protocol.Message{Method: http.MethodPost, Path: r.URL.Path, Body: body}, job)
+}
 
+// video serves a video job's status or content from the node that runs it.
+func (s *Server) video(w http.ResponseWriter, r *http.Request) {
+	if bearer(r) != s.APIKey {
+		openAIError(w, http.StatusUnauthorized, "invalid API key")
+		return
+	}
+	s.mu.Lock()
+	n := s.jobs[r.PathValue("id")]
+	if n != nil && !s.nodes[n] {
+		n = nil
+	}
+	s.mu.Unlock()
+	if n == nil {
+		openAIError(w, http.StatusNotFound, "no such video")
+		return
+	}
+	s.relay(w, r, n, protocol.Message{Method: http.MethodGet, Path: r.URL.Path}, nil)
+}
+
+// relay sends req to node n and writes the response to w (and to capture, if set).
+func (s *Server) relay(w http.ResponseWriter, r *http.Request, n *node, req protocol.Message, capture *bytes.Buffer) {
 	id := fmt.Sprintf("req_%d", s.seq.Add(1))
 	ch := make(chan protocol.Message, 64)
 	n.mu.Lock()
@@ -219,7 +261,8 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	ctx := r.Context()
-	if err := wsjson.Write(ctx, n.conn, protocol.Message{Type: "request", ID: id, Method: http.MethodPost, Path: "/v1/chat/completions", Body: body}); err != nil {
+	req.Type, req.ID = "request", id
+	if err := wsjson.Write(ctx, n.conn, req); err != nil {
 		openAIError(w, http.StatusBadGateway, "node link failed")
 		return
 	}
@@ -239,7 +282,14 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 				}
 				w.WriteHeader(m.Status)
 			case "response_chunk":
-				_, _ = w.Write([]byte(m.Data))
+				data := []byte(m.Data)
+				if m.Encoding == "base64" {
+					data, _ = base64.StdEncoding.DecodeString(m.Data)
+				}
+				if capture != nil {
+					capture.Write(data)
+				}
+				_, _ = w.Write(data)
 				if flusher != nil {
 					flusher.Flush()
 				}

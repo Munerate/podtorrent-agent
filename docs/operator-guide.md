@@ -3,6 +3,10 @@
 How to connect your inference engine to the PodTorrent network with
 `podtorrent-agent`.
 
+Using an AI coding agent on your machine? [Prompts for your coding
+agent](agent-prompts.md) has ready-made prompts that survey your engine, write
+an adapter if your video engine needs one, and test the node locally.
+
 ## What you need
 
 - An inference engine that serves the OpenAI API on an address the agent can
@@ -12,6 +16,12 @@ How to connect your inference engine to the PodTorrent network with
   - token counts in `usage`, and in the final stream chunk when the request
     has `"stream_options": {"include_usage": true}` (the network sets this, to
     meter every request).
+  - For video models (`"modality": "video"` in the manifest, priced with
+    `price.per_video_second`): the OpenAI-style job API `POST /v1/videos`,
+    `GET /v1/videos/{id}` and `GET /v1/videos/{id}/content`. Keep finished
+    clips for at least an hour. See the protocol spec, section Video. If your
+    engine has its own API, put a small adapter in front of it; prompt 2 in
+    [agent-prompts.md](agent-prompts.md) has your coding agent write one.
 - Outbound HTTPS (port 443) from the agent to the network, or one of the
   inbound and private-link setups in [connection modes](connection-modes.md).
 - A **node token** from the PodTorrent team. Keep it secret; it identifies

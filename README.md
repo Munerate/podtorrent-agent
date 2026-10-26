@@ -58,6 +58,7 @@ curl -N localhost:8787/v1/chat/completions -H 'Authorization: Bearer dev-api-key
 | Document | For |
 | --- | --- |
 | [Operator guide](docs/operator-guide.md) | Installing and running a node, manifest reference, troubleshooting |
+| [Prompts for your coding agent](docs/agent-prompts.md) | Letting an AI coding agent on your machine survey your engine and launch a text or video model as a node |
 | [Connection modes](docs/connection-modes.md) | Outbound, inbound with mutual TLS, private links (Cloudflare Tunnel, your own WireGuard) |
 | [Protocol spec v0](spec/protocol-v0.md) | Writing your own agent or client for the network; check it with `podtorrent-conformance` |
 | [Architecture](docs/architecture.md) | How the agent works inside |
