@@ -20,8 +20,10 @@ an adapter if your video engine needs one, and test the node locally.
     `price.per_video_second`): the OpenAI-style job API `POST /v1/videos`,
     `GET /v1/videos/{id}` and `GET /v1/videos/{id}/content`. Keep finished
     clips for at least an hour. See the protocol spec, section Video. If your
-    engine has its own API, put a small adapter in front of it; prompt 2 in
-    [agent-prompts.md](agent-prompts.md) has your coding agent write one.
+    model runs in ComfyUI, use [`podtorrent-comfy-video`](comfyui-video.md).
+    If your engine has another API, put a small adapter in front of it;
+    prompt 2 in [agent-prompts.md](agent-prompts.md) has your coding agent
+    write one.
 - Outbound HTTPS (port 443) from the agent to the network, or one of the
   inbound and private-link setups in [connection modes](connection-modes.md).
 - A **node token** from the PodTorrent team. Keep it secret; it identifies
