@@ -34,6 +34,14 @@ Placeholders are whole JSON strings, quotes included: `"width": "{{width}}"`
 becomes `"width": 832`. Leave everything else as it is. The workflow must end
 in a node that saves a video file (mp4, webm, mov or mkv).
 
+### Quality modes
+
+To offer more than one way to render (say a full-step workflow and a faster
+one with fewer steps or a turbo LoRA), export each as its own file and name
+them: `-workflow best=h3.json,fast=h3-fast.json`. Clients pick one with
+`"quality": "fast"` in the request; the first is the default. The price per
+second is the same for every mode.
+
 ## 3. Run it
 
 ```bash
@@ -56,10 +64,14 @@ still starting, so the agent can connect first.
 | `-min-seconds`, `-max-seconds`, `-default-seconds` | 5, 15, 5 | Allowed clip lengths. |
 | `-fps` | 24 | Sets `{{frames}}`. |
 | `-frame-multiple` | 0 | For models that need 4n+1 or 8n+1 frames, set 4 or 8. |
-| `-keep` | 24h | Jobs are forgotten after this, and their content then returns 404. |
+| `-default-quality` | first in `-workflow` | Quality mode when the request names none. |
+| `-keep` | 24h | Ended jobs are forgotten after this, and their content then returns 404. |
+| `-output-dir` | (none) | ComfyUI's `output` folder. If set, a job's clip is deleted when the job is forgotten. Otherwise ComfyUI keeps it. |
+| `-state` | `comfy-video-jobs.json` | Jobs are kept here across restarts (ids, status, file names; no prompts). Empty keeps them in memory only. |
+| `-max-queued` | 4 | Unfinished jobs allowed beyond the one rendering; more get 429. The network itself sends no more than your manifest's `slots`. |
 
-Job ids live in memory: after a restart of `podtorrent-comfy-video`, earlier
-jobs return 404. If ComfyUI restarts, jobs it no longer knows turn `failed`.
+If ComfyUI restarts, jobs it no longer knows turn `failed`, with a reason in
+the job's `error`.
 
 ## 4. Test
 

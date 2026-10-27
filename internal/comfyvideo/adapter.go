@@ -3,10 +3,10 @@
 // ComfyUI workflow can join the network without changes to ComfyUI.
 //
 // The operator exports the model's workflow in ComfyUI's API format and
-// marks the inputs with placeholders (see Fill). Each POST /v1/videos queues
-// the filled workflow with POST /prompt; status comes from /history and
-// /queue, and the clip from /view. Prompts and clips are never logged or
-// stored here; ComfyUI keeps its outputs as it always does.
+// marks the inputs with placeholders (see Fill); several workflows can be
+// offered as quality modes. Each POST /v1/videos queues the filled workflow
+// with POST /prompt; status comes from /history and /queue, and the clip from
+// /view. Prompts and clips are never logged or stored here.
 package comfyvideo
 
 import (
@@ -23,7 +23,9 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,35 +34,50 @@ import (
 )
 
 type Config struct {
-	ComfyURL string          // e.g. http://127.0.0.1:8188
-	Workflow json.RawMessage // API-format workflow with placeholders
-	Model    string          // model id served at /v1/models
-	Sizes    []string        // allowed "WxH"; the first is the default
-	MinSecs  float64
-	MaxSecs  float64
-	DefSecs  float64 // when the request has no seconds
-	FPS      int
+	ComfyURL string // e.g. http://127.0.0.1:8188
+	// Workflows by quality mode, each in ComfyUI's API format with
+	// placeholders. Requests pick one with "quality"; DefaultMode otherwise.
+	Workflows   map[string]json.RawMessage
+	DefaultMode string
+	Model       string   // model id served at /v1/models
+	Sizes       []string // allowed "WxH"; the first is the default
+	MinSecs     float64
+	MaxSecs     float64
+	DefSecs     float64 // when the request has no seconds
+	FPS         int
 	// FrameMultiple > 0 makes frames = n*FrameMultiple + 1, the nearest count
 	// to seconds*FPS (many video models need 4n+1 or 8n+1 frames).
 	FrameMultiple int
-	Keep          time.Duration // forget jobs (their content then 404s) after this
+	Keep          time.Duration // forget ended jobs after this; their content then 404s
+	MaxQueued     int           // unfinished jobs beyond the one rendering; more get 429
+	StatePath     string        // optional: keep jobs here across restarts
+	OutputDir     string        // optional: ComfyUI's output folder; clips there are deleted after Keep
 	HTTPClient    *http.Client
 	Log           *slog.Logger
 }
 
+// job is what the adapter keeps per job: never the prompt text.
 type job struct {
-	id, prompt string // prompt: ComfyUI's prompt_id, not the user's text
-	model      string
-	seconds    float64
-	size       string
-	created    time.Time
-
-	// Set once the job ended.
-	status string // "", "completed" or "failed"
-	file   *output
+	ID       string    `json:"id"`
+	PromptID string    `json:"prompt_id"` // ComfyUI's id for the queued workflow
+	Model    string    `json:"model"`
+	Seconds  float64   `json:"seconds"`
+	Size     string    `json:"size"`
+	Mode     string    `json:"mode"`
+	Created  time.Time `json:"created"`
+	Status   string    `json:"status"` // "", queued, in_progress, completed, failed
+	Finished time.Time `json:"finished,omitzero"`
+	File     *output   `json:"file,omitempty"`
+	Error    string    `json:"error,omitempty"`
 }
 
-type output struct{ Filename, Subfolder, Type string }
+func (j *job) ended() bool { return j.Status == "completed" || j.Status == "failed" }
+
+type output struct {
+	Filename  string `json:"filename"`
+	Subfolder string `json:"subfolder"`
+	Type      string `json:"type"`
+}
 
 type Adapter struct {
 	cfg  Config
@@ -68,17 +85,23 @@ type Adapter struct {
 	jobs map[string]*job
 }
 
-// New checks the workflow and returns an adapter.
+// New checks the workflows, loads saved jobs, and returns an adapter.
 func New(cfg Config) (*Adapter, error) {
-	if !bytes.Contains(cfg.Workflow, []byte("{{prompt}}")) {
-		return nil, errors.New(`workflow has no "{{prompt}}" placeholder`)
+	if len(cfg.Workflows) == 0 {
+		return nil, errors.New("no workflow")
 	}
-	var w map[string]any
-	if err := json.Unmarshal(cfg.Workflow, &w); err != nil {
-		return nil, fmt.Errorf("workflow: %w", err)
+	for mode, wf := range cfg.Workflows {
+		if err := checkWorkflow(wf); err != nil {
+			return nil, fmt.Errorf("workflow %q: %w", mode, err)
+		}
 	}
-	if _, ok := w["nodes"]; ok {
-		return nil, errors.New("workflow is in ComfyUI's UI format; export it with \"Export (API)\"")
+	if cfg.DefaultMode == "" && len(cfg.Workflows) == 1 {
+		for mode := range cfg.Workflows {
+			cfg.DefaultMode = mode
+		}
+	}
+	if _, ok := cfg.Workflows[cfg.DefaultMode]; !ok {
+		return nil, fmt.Errorf("default quality %q has no workflow", cfg.DefaultMode)
 	}
 	if len(cfg.Sizes) == 0 {
 		return nil, errors.New("no sizes")
@@ -100,8 +123,52 @@ func New(cfg Config) (*Adapter, error) {
 	if cfg.Keep <= 0 {
 		cfg.Keep = 24 * time.Hour
 	}
+	if cfg.MaxQueued <= 0 {
+		cfg.MaxQueued = 4
+	}
 	cfg.ComfyURL = strings.TrimRight(cfg.ComfyURL, "/")
-	return &Adapter{cfg: cfg, jobs: map[string]*job{}}, nil
+	a := &Adapter{cfg: cfg, jobs: map[string]*job{}}
+	if cfg.StatePath != "" {
+		b, err := os.ReadFile(cfg.StatePath)
+		if err == nil {
+			var saved []*job
+			if err := json.Unmarshal(b, &saved); err != nil {
+				return nil, fmt.Errorf("state %s: %w", cfg.StatePath, err)
+			}
+			for _, j := range saved {
+				a.jobs[j.ID] = j
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return a, nil
+}
+
+func checkWorkflow(wf json.RawMessage) error {
+	if !bytes.Contains(wf, []byte("{{prompt}}")) {
+		return errors.New(`no "{{prompt}}" placeholder`)
+	}
+	var w map[string]any
+	if err := json.Unmarshal(wf, &w); err != nil {
+		return err
+	}
+	if _, ok := w["nodes"]; ok {
+		return errors.New("in ComfyUI's UI format; export it with \"Export (API)\"")
+	}
+	return nil
+}
+
+// Modes lists the quality modes, the default first.
+func (a *Adapter) Modes() []string {
+	modes := []string{a.cfg.DefaultMode}
+	for m := range a.cfg.Workflows {
+		if m != a.cfg.DefaultMode {
+			modes = append(modes, m)
+		}
+	}
+	slices.Sort(modes[1:])
+	return modes
 }
 
 func (a *Adapter) Handler() http.Handler {
@@ -121,6 +188,16 @@ func (a *Adapter) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /v1/videos/{id}/content", a.content)
 	return mux
+}
+
+// Prune forgets jobs past Keep, deleting their clips when OutputDir is set.
+// Call it every few minutes; requests also prune.
+func (a *Adapter) Prune() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.prune() {
+		a.save()
+	}
 }
 
 func apiError(w http.ResponseWriter, status int, msg string) {
@@ -158,6 +235,7 @@ func (a *Adapter) submit(w http.ResponseWriter, r *http.Request) {
 		Prompt  string          `json:"prompt"`
 		Seconds json.RawMessage `json:"seconds"`
 		Size    string          `json:"size"`
+		Quality string          `json:"quality"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		apiError(w, http.StatusBadRequest, "body must be JSON")
@@ -188,9 +266,30 @@ func (a *Adapter) submit(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "size must be one of "+strings.Join(a.cfg.Sizes, ", "))
 		return
 	}
+	mode := req.Quality
+	if mode == "" {
+		mode = a.cfg.DefaultMode
+	}
+	wfRaw, ok := a.cfg.Workflows[mode]
+	if !ok {
+		apiError(w, http.StatusBadRequest, "quality must be one of "+strings.Join(a.Modes(), ", "))
+		return
+	}
+	a.mu.Lock()
+	waiting := 0
+	for _, j := range a.jobs {
+		if !j.ended() {
+			waiting++
+		}
+	}
+	a.mu.Unlock()
+	if waiting > a.cfg.MaxQueued {
+		apiError(w, http.StatusTooManyRequests, "queue full, try again later")
+		return
+	}
 	width, height, _ := parseSize(size)
 	seed, _ := rand.Int(rand.Reader, big.NewInt(1<<48))
-	wf, err := Fill(a.cfg.Workflow, map[string]any{
+	wf, err := Fill(wfRaw, map[string]any{
 		"prompt": req.Prompt, "width": width, "height": height, "seconds": secs, "fps": a.cfg.FPS,
 		"frames": a.Frames(secs), "seed": seed.Int64(),
 	})
@@ -209,15 +308,15 @@ func (a *Adapter) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
-	j := &job{id: "video_" + hex.EncodeToString(b), prompt: queued.PromptID, model: a.cfg.Model, seconds: secs, size: size, created: time.Now()}
+	j := &job{ID: "video_" + hex.EncodeToString(b), PromptID: queued.PromptID, Model: a.cfg.Model, Seconds: secs, Size: size,
+		Mode: mode, Created: time.Now(), Status: "queued"}
 	a.mu.Lock()
 	a.prune()
-	a.jobs[j.id] = j
+	a.jobs[j.ID] = j
+	a.save()
 	a.mu.Unlock()
-	a.cfg.Log.Info("job queued", "id", j.id, "seconds", secs, "size", size)
-	v := a.view(j)
-	v["status"] = "queued"
-	writeJSON(w, http.StatusOK, v)
+	a.cfg.Log.Info("job queued", "id", j.ID, "seconds", secs, "size", size, "quality", mode)
+	writeJSON(w, http.StatusOK, a.view(j))
 }
 
 // Fill returns the workflow with placeholders replaced. A string value that
@@ -257,7 +356,9 @@ func Fill(workflow json.RawMessage, vals map[string]any) (any, error) {
 
 func (a *Adapter) job(w http.ResponseWriter, r *http.Request) *job {
 	a.mu.Lock()
-	a.prune()
+	if a.prune() {
+		a.save()
+	}
 	j := a.jobs[r.PathValue("id")]
 	a.mu.Unlock()
 	if j == nil {
@@ -266,30 +367,76 @@ func (a *Adapter) job(w http.ResponseWriter, r *http.Request) *job {
 	return j
 }
 
-// prune forgets jobs older than Keep. Call with mu held.
-func (a *Adapter) prune() {
+// prune forgets ended jobs past Keep (and unfinished ones past twice that),
+// deleting their clips from OutputDir when set. Call with mu held; it
+// reports whether anything changed.
+func (a *Adapter) prune() bool {
+	changed := false
 	for id, j := range a.jobs {
-		if time.Since(j.created) > a.cfg.Keep {
-			delete(a.jobs, id)
+		since, limit := j.Finished, a.cfg.Keep
+		if !j.ended() || since.IsZero() {
+			since, limit = j.Created, 2*a.cfg.Keep
 		}
+		if time.Since(since) <= limit {
+			continue
+		}
+		if a.cfg.OutputDir != "" && j.File != nil && j.File.Type == "output" {
+			root, _ := filepath.Abs(a.cfg.OutputDir)
+			f, _ := filepath.Abs(filepath.Join(root, j.File.Subfolder, j.File.Filename))
+			if rel, err := filepath.Rel(root, f); err == nil && !strings.HasPrefix(rel, "..") {
+				if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+					a.cfg.Log.Warn("delete clip", "id", id, "err", err)
+				}
+			}
+		}
+		delete(a.jobs, id)
+		changed = true
+	}
+	return changed
+}
+
+// save writes the jobs to StatePath, if set. Call with mu held.
+func (a *Adapter) save() {
+	if a.cfg.StatePath == "" {
+		return
+	}
+	list := make([]*job, 0, len(a.jobs))
+	for _, j := range a.jobs {
+		list = append(list, j)
+	}
+	b, _ := json.Marshal(list)
+	tmp := a.cfg.StatePath + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err == nil {
+		err = os.Rename(tmp, a.cfg.StatePath)
+		if err != nil {
+			a.cfg.Log.Warn("save state", "err", err)
+		}
+	} else {
+		a.cfg.Log.Warn("save state", "err", err)
 	}
 }
 
 func (a *Adapter) view(j *job) map[string]any {
 	a.mu.Lock()
-	status := j.status
-	a.mu.Unlock()
-	progress := 0
+	defer a.mu.Unlock()
+	status, progress := j.Status, 0
 	switch status {
-	case "":
+	case "", "queued":
 		status = "queued"
 	case "in_progress":
 		progress = 50
 	case "completed":
 		progress = 100
 	}
-	return map[string]any{"id": j.id, "object": "video", "model": j.model, "status": status, "progress": progress,
-		"seconds": strconv.FormatFloat(j.seconds, 'f', -1, 64), "size": j.size, "created_at": j.created.Unix()}
+	v := map[string]any{"id": j.ID, "object": "video", "model": j.Model, "status": status, "progress": progress,
+		"seconds": strconv.FormatFloat(j.Seconds, 'f', -1, 64), "size": j.Size, "quality": j.Mode, "created_at": j.Created.Unix()}
+	if status == "completed" {
+		v["completed_at"] = j.Finished.Unix()
+	}
+	if status == "failed" {
+		v["error"] = map[string]string{"code": "generation_failed", "message": j.Error}
+	}
+	return v
 }
 
 var videoExt = map[string]string{".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
@@ -298,7 +445,7 @@ var videoExt = map[string]string{".mp4": "video/mp4", ".webm": "video/webm", ".m
 // refresh asks ComfyUI where the job is, unless it already ended.
 func (a *Adapter) refresh(ctx context.Context, j *job) {
 	a.mu.Lock()
-	done := j.status == "completed" || j.status == "failed"
+	done, promptID, created := j.ended(), j.PromptID, j.Created
 	a.mu.Unlock()
 	if done {
 		return
@@ -310,17 +457,19 @@ func (a *Adapter) refresh(ctx context.Context, j *job) {
 			Completed bool   `json:"completed"`
 		} `json:"status"`
 	}
-	if _, err := a.comfy(ctx, http.MethodGet, "/history/"+url.PathEscape(j.prompt), nil, &hist); err != nil {
+	if _, err := a.comfy(ctx, http.MethodGet, "/history/"+url.PathEscape(promptID), nil, &hist); err != nil {
 		return // ComfyUI busy or restarting; report the last known status
 	}
-	status, file := "", (*output)(nil)
-	if h, ok := hist[j.prompt]; ok {
-		status = "failed"
+	status, file, why := "", (*output)(nil), ""
+	if h, ok := hist[promptID]; ok {
+		status, why = "failed", "ComfyUI reported an error"
 		if h.Status.StatusStr != "error" {
 			if file = findVideo(h.Outputs); file != nil {
-				status = "completed"
+				status, why = "completed", ""
 			} else if !h.Status.Completed {
-				status = "in_progress"
+				status, why = "in_progress", ""
+			} else {
+				why = "the workflow saved no video file"
 			}
 		}
 	} else {
@@ -332,19 +481,25 @@ func (a *Adapter) refresh(ctx context.Context, j *job) {
 			return
 		}
 		switch {
-		case inQueue(q.Running, j.prompt):
+		case inQueue(q.Running, promptID):
 			status = "in_progress"
-		case inQueue(q.Pending, j.prompt):
+		case inQueue(q.Pending, promptID):
 			status = "queued"
-		case time.Since(j.created) > time.Minute:
-			status = "failed" // ComfyUI no longer knows it (restarted or cleared its queue)
+		case time.Since(created) > time.Minute:
+			status, why = "failed", "ComfyUI no longer knows this job (restarted or queue cleared)"
+		default:
+			return
 		}
 	}
 	a.mu.Lock()
-	j.status, j.file = status, file
+	j.Status, j.File, j.Error = status, file, why
+	if j.ended() {
+		j.Finished = time.Now()
+		a.save()
+	}
 	a.mu.Unlock()
 	if status == "completed" || status == "failed" {
-		a.cfg.Log.Info("job ended", "id", j.id, "status", status)
+		a.cfg.Log.Info("job ended", "id", j.ID, "status", status)
 	}
 }
 
@@ -390,7 +545,7 @@ func (a *Adapter) content(w http.ResponseWriter, r *http.Request) {
 	}
 	a.refresh(r.Context(), j)
 	a.mu.Lock()
-	status, file := j.status, j.file
+	status, file := j.Status, j.File
 	a.mu.Unlock()
 	if status != "completed" || file == nil {
 		apiError(w, http.StatusConflict, "video not ready")
@@ -410,7 +565,7 @@ func (a *Adapter) content(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		apiError(w, http.StatusBadGateway, "ComfyUI no longer has this video")
+		apiError(w, http.StatusNotFound, "ComfyUI no longer has this video")
 		return
 	}
 	w.Header().Set("Content-Type", videoExt[strings.ToLower(path.Ext(file.Filename))])
