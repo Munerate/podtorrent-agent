@@ -58,9 +58,10 @@ agent's repo is https://github.com/Munerate/podtorrent-agent; clone it.
 What you need from it:
 - spec/protocol-v0.md, sections "Manifest" and "Video": the contract below.
 - docs/operator-guide.md, "Test before going live".
-- cmd/: podtorrent-agent, mock-network (a local stand-in for the network)
-  and mock-engine (a reference video engine). Build all with Go 1.24+:
-  `go build -o bin/ ./cmd/...`.
+- cmd/: podtorrent-agent, mock-network (a local stand-in for the network),
+  mock-engine (a reference video engine) and podtorrent-comfy-video (a ready
+  adapter for ComfyUI workflows; see docs/comfyui-video.md). Build all with
+  Go 1.24+: `go build -o bin/ ./cmd/...`.
 If ./podtorrent-node/ has a profile and manifest, use them. Otherwise ask me
 which video model I run and what runs it, then check the details yourself.
 
@@ -78,7 +79,10 @@ status is queued | in_progress | completed | failed; ids use only [A-Za-z0-9_.-]
 Keep finished clips at least 1 hour. ./bin/mock-engine is a working example.
 
 Steps:
-1. If my engine already serves the contract, skip to 3.
+1. If my engine already serves the contract, skip to 3. If the model runs in
+   ComfyUI, use podtorrent-comfy-video: follow docs/comfyui-video.md (I export
+   the workflow in API format; you mark the placeholders, pick sizes, lengths,
+   fps and frame multiple to match the model's nodes), then go to 3.
 2. Otherwise write a small adapter in front of it: one file plus a README,
    in a language already on this machine. It starts jobs in the background,
    maps the engine's states to the four statuses, caps concurrent jobs to
