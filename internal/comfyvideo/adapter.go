@@ -45,9 +45,11 @@ type Config struct {
 	MaxSecs     float64
 	DefSecs     float64 // when the request has no seconds
 	FPS         int
-	// FrameMultiple > 0 makes frames = n*FrameMultiple + 1, the nearest count
-	// to seconds*FPS (many video models need 4n+1 or 8n+1 frames).
+	// FrameMultiple > 0 makes frames = n*FrameMultiple + FrameOffset, the
+	// nearest such count to seconds*FPS (models that need 8n+1 frames use
+	// 8 and 1; MiniMax-H3 uses 17 and 5).
 	FrameMultiple int
+	FrameOffset   int
 	Keep          time.Duration // forget ended jobs after this; their content then 404s
 	MaxQueued     int           // unfinished jobs beyond the one rendering; more get 429
 	StatePath     string        // optional: keep jobs here across restarts
@@ -224,7 +226,8 @@ func parseSize(s string) (int, int, error) {
 func (a *Adapter) Frames(secs float64) int {
 	n := secs * float64(a.cfg.FPS)
 	if m := a.cfg.FrameMultiple; m > 0 {
-		return int(math.Round(n/float64(m)))*m + 1
+		off := a.cfg.FrameOffset
+		return max(1, int(math.Round((n-float64(off))/float64(m))))*m + off
 	}
 	return int(math.Round(n))
 }

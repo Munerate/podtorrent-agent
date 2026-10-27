@@ -26,7 +26,7 @@ Edit the exported JSON and put placeholders where the request's values go:
 | --- | --- | --- |
 | `"{{prompt}}"` (required) | the client's prompt (also replaced inside longer strings) | positive text encoder `text` |
 | `"{{width}}"`, `"{{height}}"` | numbers from the requested size | empty video latent |
-| `"{{frames}}"` | seconds × fps, or n×multiple+1 with `-frame-multiple` | latent `length` / frame count |
+| `"{{frames}}"` | seconds × fps, or n×multiple+offset with `-frame-multiple` and `-frame-offset` | latent `length` / frame count |
 | `"{{seconds}}"`, `"{{fps}}"` | numbers | nodes that take a duration or frame rate |
 | `"{{seed}}"` | a random number per job | sampler `seed` / `noise_seed` |
 
@@ -63,7 +63,7 @@ still starting, so the agent can connect first.
 | `-sizes` | `832x480,480x832,640x640` | Allowed sizes; the first is used when a request gives none. Others get 400. |
 | `-min-seconds`, `-max-seconds`, `-default-seconds` | 5, 15, 5 | Allowed clip lengths. |
 | `-fps` | 24 | Sets `{{frames}}`. |
-| `-frame-multiple` | 0 | For models that need 4n+1 or 8n+1 frames, set 4 or 8. |
+| `-frame-multiple`, `-frame-offset` | 0, 1 | For models that need n×multiple+offset frames: 8 and 1 for 8n+1, 17 and 5 for MiniMax-H3's 17n+5. The count nearest seconds × fps is used. |
 | `-default-quality` | first in `-workflow` | Quality mode when the request names none. |
 | `-keep` | 24h | Ended jobs are forgotten after this, and their content then returns 404. |
 | `-output-dir` | (none) | ComfyUI's `output` folder. If set, a job's clip is deleted when the job is forgotten. Otherwise ComfyUI keeps it. |

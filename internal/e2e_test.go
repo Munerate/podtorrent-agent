@@ -273,7 +273,7 @@ func TestComfyVideo(t *testing.T) {
 	comfy := httptest.NewServer(fc.handler())
 	defer comfy.Close()
 	ad, err := comfyvideo.New(comfyvideo.Config{ComfyURL: comfy.URL, Model: video, Sizes: []string{"832x480"}, MinSecs: 5, MaxSecs: 15,
-		DefSecs: 5, FPS: 24, FrameMultiple: 8, StatePath: filepath.Join(t.TempDir(), "jobs.json"),
+		DefSecs: 5, FPS: 24, FrameMultiple: 8, FrameOffset: 1, StatePath: filepath.Join(t.TempDir(), "jobs.json"),
 		Workflows: map[string]json.RawMessage{"best": json.RawMessage(`{"3":{"inputs":{"text":"{{prompt}}"}},"5":{"inputs":{"width":"{{width}}","length":"{{frames}}"}}}`)}})
 	if err != nil {
 		t.Fatal(err)
