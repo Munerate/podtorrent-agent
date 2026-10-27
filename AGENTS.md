@@ -26,15 +26,17 @@ Go 1.24+ is required (`go.mod`). Run `gofmt -w` on changed files.
 - `internal/protocol/protocol.go` — wire types. Keep in sync with `spec/protocol-v0.md`.
 - `internal/mocknet`, `internal/mockengine` — test doubles, also shipped to operators.
 - `internal/e2e_test.go` — end-to-end tests; extend for observable behaviour.
+- `internal/comfyvideo` — the video job API in front of ComfyUI (`cmd/podtorrent-comfy-video`);
+  a separate binary that listens on loopback and calls only ComfyUI.
 - `cmd/*` — thin CLIs; no logic beyond flags and wiring.
 
 ## Rules
 
 - Protocol changes are additive only (optional fields, new message types) and
   must update `spec/protocol-v0.md` in the same change.
-- Never log prompt or response content. Never open a listener except in
-  inbound mode (`-listen`), read files other than the manifest and TLS files,
-  or call any engine path other than
+- Never log prompt or response content. In the agent, never open a listener
+  except in inbound mode (`-listen`), read files other than the manifest and
+  TLS files, or call any engine path other than
   `POST /v1/chat/completions`, `GET /v1/models` and the video job paths in
   the spec (`protocol.Allowed`).
 - No new dependencies without the maintainers' agreement.
