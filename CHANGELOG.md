@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-10-27)
 
 - `podtorrent-comfy-video`: serves the video job API in front of a ComfyUI
   workflow (exported in API format, with placeholders for prompt, size,
   frames and seed), so ComfyUI video models can join without an adapter of
   their own. Quality modes as named workflows, jobs kept across restarts,
-  clips deleted after `-keep` when given the output folder. See
+  clips deleted after `-keep` when given the output folder, and frame
+  grids of n×multiple+offset (`-frame-multiple`, `-frame-offset`). See
   `docs/comfyui-video.md`.
 - Video generation (spec: Video): models may set `modality: "video"` and
   `price.per_video_second`. The agent forwards `POST /v1/videos`, holds the

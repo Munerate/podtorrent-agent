@@ -42,9 +42,15 @@ func TestFrames(t *testing.T) {
 	if got := a.Frames(5); got != 120 {
 		t.Errorf("frames = %d", got)
 	}
-	a, _ = comfyvideo.New(cfg(comfyvideo.Config{FrameMultiple: 8}))
+	a, _ = comfyvideo.New(cfg(comfyvideo.Config{FrameMultiple: 8, FrameOffset: 1}))
 	if got := a.Frames(5); got != 121 {
 		t.Errorf("frames 8n+1 = %d", got)
+	}
+	a, _ = comfyvideo.New(cfg(comfyvideo.Config{FrameMultiple: 17, FrameOffset: 5}))
+	for secs, want := range map[float64]int{5: 124, 10: 243, 15: 362} {
+		if got := a.Frames(secs); got != want {
+			t.Errorf("frames 17n+5 for %gs = %d, want %d", secs, got, want)
+		}
 	}
 }
 

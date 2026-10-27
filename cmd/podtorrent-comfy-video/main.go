@@ -26,7 +26,8 @@ func main() {
 	maxSecs := flag.Float64("max-seconds", 15, "longest clip")
 	defSecs := flag.Float64("default-seconds", 5, "clip length when the request has none")
 	fps := flag.Int("fps", 24, "frames per second; sets {{frames}}")
-	frameMultiple := flag.Int("frame-multiple", 0, "if set, {{frames}} = n*multiple+1 (e.g. 8 for models that need 8n+1 frames)")
+	frameMultiple := flag.Int("frame-multiple", 0, "if set, {{frames}} = n*multiple+offset, nearest to seconds*fps (e.g. 8 for 8n+1, 17 for 17n+5)")
+	frameOffset := flag.Int("frame-offset", 1, "offset for -frame-multiple (1 for 8n+1, 5 for 17n+5)")
 	keep := flag.Duration("keep", 24*time.Hour, "forget finished jobs after this")
 	maxQueued := flag.Int("max-queued", 4, "unfinished jobs allowed beyond the one rendering; more get 429")
 	state := flag.String("state", "comfy-video-jobs.json", "file that keeps jobs across restarts (no prompts); empty to keep them in memory only")
@@ -59,7 +60,7 @@ func main() {
 	}
 	a, err := comfyvideo.New(comfyvideo.Config{ComfyURL: *comfy, Workflows: workflows, DefaultMode: *defMode, Model: *model,
 		Sizes: strings.Split(*sizes, ","), MinSecs: *minSecs, MaxSecs: *maxSecs, DefSecs: *defSecs, FPS: *fps,
-		FrameMultiple: *frameMultiple, Keep: *keep, MaxQueued: *maxQueued, StatePath: *state, OutputDir: *outputDir, Log: log})
+		FrameMultiple: *frameMultiple, FrameOffset: *frameOffset, Keep: *keep, MaxQueued: *maxQueued, StatePath: *state, OutputDir: *outputDir, Log: log})
 	if err != nil {
 		log.Error("config", "err", err)
 		os.Exit(1)
