@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -188,11 +189,14 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 		total, byModel := a.free()
 		_ = send(protocol.Message{Type: "status", FreeSlots: protocol.Int(total), FreeByModel: byModel})
 	}
-	sendStatus()
-
+	// Watch for manifest changes before the first status, and resend if one
+	// landed since hello, so no change is lost in between.
 	changed := make(chan struct{}, 1)
 	a.mu.Lock()
 	a.notify[changed] = true
+	if !reflect.DeepEqual(a.manifest, manifest) {
+		changed <- struct{}{}
+	}
 	a.send, a.node = func(m protocol.Message) error {
 		if m.Type == "status" {
 			statusMu.Lock()
@@ -203,6 +207,7 @@ func (a *Agent) Serve(ctx context.Context, conn *websocket.Conn, peer string) er
 	a.gen++
 	gen := a.gen
 	a.mu.Unlock()
+	sendStatus()
 	defer func() {
 		a.mu.Lock()
 		delete(a.notify, changed)

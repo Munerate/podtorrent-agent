@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: a manifest change made while the agent was connecting (between
+  `hello` and the first `status`) was not sent to the network until the next
+  reconnect.
+
 ## 0.4.0 (2026-10-27)
 
 - `podtorrent-comfy-video`: serves the video job API in front of a ComfyUI

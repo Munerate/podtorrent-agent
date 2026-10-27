@@ -69,7 +69,8 @@ func TestManifestReload(t *testing.T) {
 	}
 	read("hello")
 	_ = wsjson.Write(ctx, conn, protocol.Message{Type: "welcome", Protocol: protocol.Int(0), Node: "n"})
-	read("status")
+	// Change it right after welcome, while the link is still starting up: the
+	// change must still reach the network.
 	a.SetManifest(protocol.Manifest{Node: "n", Models: []protocol.Model{{ID: model, Slots: 1}, {ID: "mock/echo-2", Slots: 3}}})
 	m := read("manifest")
 	if len(m.Manifest.Models) != 2 {
