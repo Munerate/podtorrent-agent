@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/Munerate/podtorrent-agent/internal/agent"
 	"github.com/Munerate/podtorrent-agent/internal/protocol"
+	"github.com/Munerate/podtorrent-agent/pkg/manifest"
 )
 
 func main() {
@@ -42,7 +42,7 @@ func main() {
 	if token == "" {
 		fatal(log, "PODTORRENT_NODE_TOKEN is not set")
 	}
-	m, err := loadManifest(*manifestPath)
+	m, err := manifest.Load(*manifestPath)
 	if err != nil {
 		fatal(log, err.Error())
 	}
@@ -125,21 +125,6 @@ func checkEngine(ctx context.Context, log *slog.Logger, engine string, m protoco
 	}
 }
 
-func loadManifest(path string) (protocol.Manifest, error) {
-	var m protocol.Manifest
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return m, err
-	}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return m, fmt.Errorf("manifest: %w", err)
-	}
-	if m.Node == "" || m.TotalSlots() == 0 {
-		return m, fmt.Errorf("manifest needs a node name and at least one model with slots > 0")
-	}
-	return m, nil
-}
-
 // watchManifest reloads the manifest when the file changes (checked every
 // 5 s) or on SIGHUP. An invalid file, or one naming models the engine
 // doesn't serve, is logged and ignored; the running manifest stays.
@@ -168,7 +153,7 @@ func watchManifest(ctx context.Context, log *slog.Logger, a *agent.Agent, path, 
 				last = mt
 			}
 		}
-		m, err := loadManifest(path)
+		m, err := manifest.Load(path)
 		if err != nil {
 			log.Error("manifest not reloaded", "err", err)
 			continue

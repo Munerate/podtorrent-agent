@@ -28,6 +28,10 @@ Go 1.24+ is required (`go.mod`). Run `gofmt -w` on changed files.
 - `internal/e2e_test.go` — end-to-end tests; extend for observable behaviour.
 - `internal/comfyvideo` — the video job API in front of ComfyUI (`cmd/podtorrent-comfy-video`);
   a separate binary that listens on loopback and calls only ComfyUI.
+- `pkg/*` — the public Go API (`manifest`, `engine`, `node`, `selftest`) for
+  programs built on the agent, such as the podtorrent-agent-desktop app. Thin
+  wrappers over `internal/*`; others depend on these signatures, so change them
+  additively only.
 - `cmd/*` — thin CLIs; no logic beyond flags and wiring.
 
 ## Rules
@@ -38,7 +42,8 @@ Go 1.24+ is required (`go.mod`). Run `gofmt -w` on changed files.
   except in inbound mode (`-listen`), read files other than the manifest and
   TLS files, or call any engine path other than
   `POST /v1/chat/completions`, `GET /v1/models` and the video job paths in
-  the spec (`protocol.Allowed`).
+  the spec (`protocol.Allowed`). The one exception is `pkg/selftest`, which
+  plays the network on a 127.0.0.1 listener for the length of a self-test.
 - No new dependencies without the maintainers' agreement.
 - This repo is public: no customer or operator names, private hostnames,
   account ids, tokens or internal discussion in code, docs, tests or commit
