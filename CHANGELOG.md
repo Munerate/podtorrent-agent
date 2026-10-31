@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-10-31)
 
+- Public Go API in `pkg/` for programs built on the agent, such as a
+  desktop app: `pkg/manifest` (load, validate, save), `pkg/engine` (check
+  the engine's models, test a streamed chat, mock engine), `pkg/node` (run
+  the agent in-process, status as values) and `pkg/selftest` (conformance
+  checks of a setup on loopback). No new dependencies.
 - Fixed: a manifest change made while the agent was connecting (between
   `hello` and the first `status`) was not sent to the network until the next
   reconnect.
