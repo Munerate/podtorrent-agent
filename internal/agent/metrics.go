@@ -84,3 +84,34 @@ func (a *Agent) MetricsHandler() http.Handler {
 		m.mu.Unlock()
 	})
 }
+
+// Snapshot is the metrics at one moment, for callers that want them as values
+// rather than Prometheus text.
+type Snapshot struct {
+	Connected bool
+	Connects  int64
+	Slots     map[string]int      // per model, from the manifest
+	Busy      map[string]int      // requests in flight per model
+	Requests  map[[2]string]int64 // {model, outcome} -> count
+	Receipts  map[string]int64    // network receipt result -> count
+}
+
+func (a *Agent) Snapshot() Snapshot {
+	m := a.Metrics
+	s := Snapshot{Connected: m.up.Load() == 1, Connects: m.connects.Load(),
+		Slots: map[string]int{}, Busy: map[string]int{}, Requests: map[[2]string]int64{}, Receipts: map[string]int64{}}
+	_, free := a.free()
+	for _, mod := range a.Manifest().Models {
+		s.Slots[mod.ID] = mod.Slots
+		s.Busy[mod.ID] = mod.Slots - free[mod.ID]
+	}
+	m.mu.Lock()
+	for k, v := range m.requests {
+		s.Requests[k] = v
+	}
+	for k, v := range m.receipts {
+		s.Receipts[k] = v
+	}
+	m.mu.Unlock()
+	return s
+}

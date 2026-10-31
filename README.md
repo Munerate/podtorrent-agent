@@ -62,6 +62,7 @@ curl -N localhost:8787/v1/chat/completions -H 'Authorization: Bearer dev-api-key
 | [ComfyUI video models](docs/comfyui-video.md) | Serving a video model that runs as a ComfyUI workflow, with `podtorrent-comfy-video` |
 | [Connection modes](docs/connection-modes.md) | Outbound, inbound with mutual TLS, private links (Cloudflare Tunnel, your own WireGuard) |
 | [Protocol spec v0](spec/protocol-v0.md) | Writing your own agent or client for the network; check it with `podtorrent-conformance` |
+| [Go API](pkg/) | Building a program on the agent (e.g. a desktop app): `manifest`, `engine`, `node`, `selftest` — see `go doc ./pkg/...` |
 | [Architecture](docs/architecture.md) | How the agent works inside |
 | [Roadmap](docs/roadmap.md) | What's done and what's next |
 | [Contributing](CONTRIBUTING.md) | Building, testing, sending changes |
