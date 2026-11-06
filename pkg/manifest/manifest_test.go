@@ -48,3 +48,28 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("problems in %v, want %v", fields, want)
 	}
 }
+
+func TestValidatePipeline(t *testing.T) {
+	m := func(p *Pipeline) Manifest {
+		return Manifest{Node: "example-node-01", Models: []Model{{ID: "mock/echo-1", Slots: 1, Pipeline: p}}}
+	}
+	for _, p := range []*Pipeline{
+		{Layers: 48},
+		{Layers: 48, Hops: []Hop{{Peer: "mac-a", Lo: 0, Hi: 24}, {Peer: "mac-b", Lo: 24, Hi: 48}}},
+	} {
+		if ps := Validate(m(p)); len(ps) != 0 {
+			t.Fatalf("%+v: %v", p, ps)
+		}
+	}
+	for p, field := range map[*Pipeline]string{
+		{}: "models[0].pipeline.layers",
+		{Layers: 48, Hops: []Hop{{Lo: 0, Hi: 24}, {Lo: 20, Hi: 48}}}: "models[0].pipeline.hops[1]",
+		{Layers: 48, Hops: []Hop{{Lo: 0, Hi: 50}}}:                   "models[0].pipeline.hops[0]",
+		{Layers: 48, Hops: []Hop{{Lo: 0, Hi: 24}}}:                   "models[0].pipeline.hops",
+	} {
+		ps := Validate(m(p))
+		if len(ps) != 1 || ps[0].Field != field {
+			t.Fatalf("%+v: problems %v, want one in %s", p, ps, field)
+		}
+	}
+}

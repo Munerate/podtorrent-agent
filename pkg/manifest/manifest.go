@@ -19,6 +19,8 @@ type (
 	Price        = protocol.Price
 	Speed        = protocol.Speed
 	CachedPrompt = protocol.CachedPrompt
+	Pipeline     = protocol.Pipeline
+	Hop          = protocol.Hop
 )
 
 // Load reads a manifest file. It fails if the file is not valid JSON or has
@@ -122,6 +124,7 @@ func Validate(m Manifest) []Problem {
 			add(f+".speed", "must not be negative")
 		}
 		checkPrice(add, f+".price", mod.Price)
+		checkPipeline(add, f+".pipeline", mod.Pipeline)
 		for j, cp := range mod.CachedPrompts {
 			g := fmt.Sprintf("%s.cached_prompts[%d]", f, j)
 			if cp.Name == "" {
@@ -133,6 +136,26 @@ func Validate(m Manifest) []Problem {
 		}
 	}
 	return ps
+}
+
+func checkPipeline(add func(string, string, ...any), field string, p *Pipeline) {
+	if p == nil {
+		return
+	}
+	if p.Layers <= 0 {
+		add(field+".layers", "must be at least 1")
+	}
+	next := 0
+	for i, h := range p.Hops {
+		if h.Lo != next || h.Hi <= h.Lo || (p.Layers > 0 && h.Hi > p.Layers) {
+			add(fmt.Sprintf("%s.hops[%d]", field, i), "must cover layers from %d, in order, within [0, %d)", next, p.Layers)
+			return
+		}
+		next = h.Hi
+	}
+	if len(p.Hops) > 0 && next != p.Layers {
+		add(field+".hops", "cover layers [0, %d), not all %d", next, p.Layers)
+	}
 }
 
 func checkPrice(add func(string, string, ...any), field string, p *Price) {
