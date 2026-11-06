@@ -185,12 +185,36 @@ Sent in `hello`. Extra fields are allowed and ignored.
 | `power_watts` | Optional, declared by the operator: typical power draw in watts while serving at full load. Node-wide, or per model in `models[].power_watts`. Used for tokens per watt on the operator dashboard; not used for routing. |
 | `models[].cached_prompts` | Openings of the conversation the engine keeps processed (see below). |
 | `models[].modality` | `text` (default) or `video`. Video models get only the video requests; text models only chat. |
+| `models[].pipeline` | Optional. The engine serves this model as the head of a layer-split pipeline (see below). |
 | `per_video_second` | In `price` (node-wide or per model, and in `batch`): USD per second of generated video. Used for `video` models instead of the token prices, which may then be omitted. |
 
 - `models[].id` is matched exactly against the client's `model`.
 - `slots` is the most concurrent requests the node accepts for that model.
   Each model has its own pool; a request for a model not in the manifest, or
   whose pool is full, gets `response_error`.
+
+### Layer-split pipelines
+
+A node may serve a model that no single machine holds: its engine keeps the
+tokenizer, embeddings and output head and runs the layers on other machines,
+each holding a range of layers. The agent, the request and the response are
+unchanged; `models[].pipeline` only tells the network how the model is served.
+
+```json
+"pipeline": { "layers": 48,
+              "hops": [ { "peer": "example-node-02", "lo": 0, "hi": 24 },
+                        { "peer": "example-node-03", "lo": 24, "hi": 48 } ] }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `layers` | The model's layer count. |
+| `hops` | Optional. The current route: in order, each machine's name (or node id) and layers `[lo, hi)`. Together they cover `[0, layers)` exactly. |
+
+The node's operator sees the prompt, as for any node, and every machine on
+the route sees the model's intermediate state for it. Billing and receipts
+are those of the node; the machines on the route are not separate parties
+to the request.
 
 ## Video
 

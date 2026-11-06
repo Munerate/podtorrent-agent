@@ -80,6 +80,23 @@ type Model struct {
 	Price              *Price         `json:"price,omitempty"` // overrides the node-wide price
 	PowerWatts         float64        `json:"power_watts,omitempty"`
 	Modality           string         `json:"modality,omitempty"` // "text" (default) or "video"
+	// Set when the engine serves the model as the head of a layer-split pipeline.
+	Pipeline *Pipeline `json:"pipeline,omitempty"`
+}
+
+// Pipeline describes a model served across several machines by layer range
+// (spec/protocol-v0.md, "Layer-split pipelines"). Informational: the network
+// treats the node like any other.
+type Pipeline struct {
+	Layers int   `json:"layers"`
+	Hops   []Hop `json:"hops,omitempty"` // the current route, in order
+}
+
+// Hop is one stage of a pipeline: layers [Lo, Hi) on one machine.
+type Hop struct {
+	Peer string `json:"peer,omitempty"` // the machine's name, or its node id once known
+	Lo   int    `json:"lo"`
+	Hi   int    `json:"hi"`
 }
 
 // CachedPrompt is an opening of the conversation the engine keeps processed.
