@@ -30,9 +30,15 @@ func main() {
 	insecure := flag.Bool("insecure-plaintext", false, "inbound mode: serve without TLS (only behind a tunnel or for local tests)")
 	metricsListen := flag.String("metrics-listen", env("PODTORRENT_METRICS_LISTEN", ""), "serve Prometheus metrics at /metrics on this address (e.g. 127.0.0.1:9100)")
 	jobPoll := flag.Duration("job-poll", 2*time.Second, "how often to check a running video job on the engine")
+	engineKind := flag.String("engine-kind", env("PODTORRENT_ENGINE_KIND", ""), `engine type: empty for any OpenAI-compatible engine, or "exo" for an exo cluster`)
+	firstEvent := flag.Duration("first-event", time.Minute, "exo: fail a stream that sends no event within this time, so the network can retry it elsewhere")
 	manifestPath := flag.String("manifest", env("PODTORRENT_MANIFEST", "manifest.json"), "node manifest file")
 	flag.Parse()
 
+	if *engineKind != "" && *engineKind != agent.EngineExo {
+		fmt.Fprintf(os.Stderr, "unknown -engine-kind %q (want %q or empty)\n", *engineKind, agent.EngineExo)
+		os.Exit(2)
+	}
 	if *showVersion {
 		fmt.Println(agent.Name)
 		return
@@ -52,7 +58,9 @@ func main() {
 	if !*skipCheck {
 		checkEngine(ctx, log, *engine, m)
 	}
-	a := agent.New(agent.Config{NetworkURL: *network, Token: token, EngineURL: *engine, Manifest: m, Log: log, JobPoll: *jobPoll})
+	a := agent.New(agent.Config{NetworkURL: *network, Token: token, EngineURL: *engine, Manifest: m, Log: log, JobPoll: *jobPoll,
+		Engine: *engineKind, FirstEvent: *firstEvent})
+	go a.WatchEngine(ctx)
 	go watchManifest(ctx, log, a, *manifestPath, *engine, *skipCheck)
 	if *metricsListen != "" {
 		mux := http.NewServeMux()

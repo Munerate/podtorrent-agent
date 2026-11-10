@@ -109,6 +109,8 @@ team or compute it with the spec's formula.
 | --- | --- | --- | --- |
 | `-network` | `PODTORRENT_NETWORK` | `wss://api.podtorrent.com/v0/node/connect` | Network link URL |
 | `-engine` | `PODTORRENT_ENGINE` | `http://127.0.0.1:8000` | Your engine's base URL (without `/v1`) |
+| `-engine-kind` | `PODTORRENT_ENGINE_KIND` | empty | `exo` for an exo cluster; see [exo clusters](exo.md) |
+| `-first-event` | — | `1m` | exo: fail a stream that sends no event within this time |
 | `-manifest` | `PODTORRENT_MANIFEST` | `manifest.json` | Manifest file |
 | — | `PODTORRENT_NODE_TOKEN` | — | Node token (required) |
 | `-skip-engine-check` | — | off | Don't check `/v1/models` at start |

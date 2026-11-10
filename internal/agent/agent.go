@@ -34,6 +34,9 @@ type Config struct {
 	Log        *slog.Logger
 	HTTPClient *http.Client
 	JobPoll    time.Duration // how often to check a video job on the engine; default 2 s
+	Engine     string        // "" for any OpenAI-compatible engine, or EngineExo
+	EnginePoll time.Duration // exo: how often to read which models are loaded; default 5 s
+	FirstEvent time.Duration // exo: longest wait for a stream's first event; default 60 s
 }
 
 type Agent struct {
@@ -41,14 +44,16 @@ type Agent struct {
 	Metrics  *Metrics
 	receipts *receipts
 
-	mu       sync.Mutex
-	inFlight map[string]context.CancelFunc
-	manifest protocol.Manifest            // current; guarded by mu
-	busy     map[string]int               // requests in flight per model; guarded by mu
-	notify   map[chan struct{}]bool       // sessions to tell about manifest changes; guarded by mu
-	send     func(protocol.Message) error // current session's sender, for video jobs; guarded by mu
-	node     string                       // node id from the current welcome; guarded by mu
-	gen      int                          // session count; guarded by mu
+	mu         sync.Mutex
+	inFlight   map[string]context.CancelFunc
+	manifest   protocol.Manifest            // current; guarded by mu
+	busy       map[string]int               // requests in flight per model; guarded by mu
+	notify     map[chan struct{}]bool       // sessions to tell about manifest changes; guarded by mu
+	send       func(protocol.Message) error // current session's sender, for video jobs; guarded by mu
+	node       string                       // node id from the current welcome; guarded by mu
+	gen        int                          // session count; guarded by mu
+	ready      []string                     // exo: models loaded on the engine, sorted; guarded by mu
+	readyKnown bool                         // exo: ready has been read once; guarded by mu
 }
 
 func New(cfg Config) *Agent {
@@ -61,6 +66,12 @@ func New(cfg Config) *Agent {
 	cfg.EngineURL = strings.TrimRight(cfg.EngineURL, "/")
 	if cfg.JobPoll <= 0 {
 		cfg.JobPoll = 2 * time.Second
+	}
+	if cfg.EnginePoll <= 0 {
+		cfg.EnginePoll = 5 * time.Second
+	}
+	if cfg.FirstEvent <= 0 {
+		cfg.FirstEvent = time.Minute
 	}
 	return &Agent{cfg: cfg, Metrics: NewMetrics(), receipts: newReceipts(), inFlight: map[string]context.CancelFunc{},
 		manifest: cfg.Manifest, busy: map[string]int{}, notify: map[chan struct{}]bool{}}
@@ -92,6 +103,9 @@ func (a *Agent) acquire(model string) error {
 	defer a.mu.Unlock()
 	for _, mod := range a.manifest.Models {
 		if mod.ID == model {
+			if !a.engineReady(model) {
+				return errors.New("model not loaded on the engine")
+			}
 			if a.busy[model] >= mod.Slots {
 				return errors.New("no free slots")
 			}
@@ -115,6 +129,9 @@ func (a *Agent) free() (int, map[string]int) {
 	total, by := 0, map[string]int{}
 	for _, mod := range a.manifest.Models {
 		by[mod.ID] = max(0, mod.Slots-a.busy[mod.ID])
+		if !a.engineReady(mod.ID) {
+			by[mod.ID] = 0
+		}
 		total += by[mod.ID]
 	}
 	return total, by
@@ -353,6 +370,11 @@ func (a *Agent) forward(ctx context.Context, m protocol.Message, node, model str
 		fail(fmt.Errorf("path not allowed: %s %s", m.Method, m.Path))
 		return
 	}
+	exo := a.cfg.Engine == EngineExo
+	if exo && m.Method == http.MethodPost && hasRemoteURL(m.Body) {
+		fail(errors.New("this node takes no remote URLs in requests; send images inline as data: URLs"))
+		return
+	}
 	var body io.Reader
 	if m.Method == http.MethodPost {
 		body = bytes.NewReader(m.Body)
@@ -373,12 +395,25 @@ func (a *Agent) forward(ctx context.Context, m protocol.Message, node, model str
 	}
 	defer resp.Body.Close()
 
+	var first []byte
+	if exo && resp.StatusCode == http.StatusOK && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		if first, err = firstEvent(resp.Body, a.cfg.FirstEvent, cancel); err != nil {
+			fail(err)
+			return
+		}
+	}
 	if err := send(protocol.Message{Type: "response_start", ID: m.ID, Status: resp.StatusCode,
 		Headers: map[string]string{"content-type": resp.Header.Get("Content-Type")}}); err != nil {
 		return
 	}
 	buf := make([]byte, 16<<10)
 	var tail usageTail
+	if len(first) > 0 {
+		tail.Write(first)
+		if send(protocol.Message{Type: "response_chunk", ID: m.ID, Data: string(first)}) != nil {
+			return
+		}
+	}
 	for {
 		n, err := resp.Body.Read(buf)
 		if n > 0 {

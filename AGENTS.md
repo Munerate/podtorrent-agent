@@ -42,7 +42,9 @@ Go 1.24+ is required (`go.mod`). Run `gofmt -w` on changed files.
   except in inbound mode (`-listen`), read files other than the manifest and
   TLS files, or call any engine path other than
   `POST /v1/chat/completions`, `GET /v1/models` and the video job paths in
-  the spec (`protocol.Allowed`). The one exception is `pkg/selftest`, which
+  the spec (`protocol.Allowed`), plus, with `-engine-kind exo` only,
+  `GET /state/instances` and `GET /state/runners` (never `/state` itself,
+  which holds prompts). The one exception is `pkg/selftest`, which
   plays the network on a 127.0.0.1 listener for the length of a self-test.
 - No new dependencies without the maintainers' agreement.
 - This repo is public: no customer or operator names, private hostnames,
