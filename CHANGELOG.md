@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- exo clusters (`-engine-kind exo`, `node.Config.Engine`): a whole exo
+  cluster serves as one node. The agent offers only the models exo has
+  loaded (read from `GET /state/instances` and `/state/runners` every 5 s),
+  refuses requests with remote `url`/`image_url` values (exo would fetch
+  them from the operator's network), and fails a stream that sends no event
+  within `-first-event` (default 1 min) so the network can retry it.
+  `scripts/exo-port-guard.sh` closes exo's port to all but the cluster's
+  Macs. See `docs/exo.md`. No protocol change.
+
 ## 0.5.0 (2026-10-31)
 
 - Public Go API in `pkg/` for programs built on the agent, such as a

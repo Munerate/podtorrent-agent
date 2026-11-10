@@ -16,6 +16,9 @@ const (
 	DefaultNetworkURL = "wss://api.podtorrent.com/v0/node/connect"
 	DefaultEngineURL  = "http://127.0.0.1:8000"
 	Version           = agent.Name
+	// EngineExo is Config.Engine for an exo cluster: the node offers only the
+	// models exo has loaded and refuses requests with remote URLs.
+	EngineExo = agent.EngineExo
 )
 
 type Config struct {
@@ -24,6 +27,7 @@ type Config struct {
 	EngineURL  string // default DefaultEngineURL
 	Manifest   manifest.Manifest
 	Log        *slog.Logger // never given prompt or response content
+	Engine     string       // "" for any OpenAI-compatible engine, or EngineExo
 }
 
 type Node struct{ a *agent.Agent }
@@ -35,11 +39,17 @@ func New(cfg Config) *Node {
 	if cfg.EngineURL == "" {
 		cfg.EngineURL = DefaultEngineURL
 	}
-	return &Node{agent.New(agent.Config{NetworkURL: cfg.NetworkURL, Token: cfg.Token, EngineURL: cfg.EngineURL, Manifest: cfg.Manifest, Log: cfg.Log})}
+	return &Node{agent.New(agent.Config{NetworkURL: cfg.NetworkURL, Token: cfg.Token, EngineURL: cfg.EngineURL, Manifest: cfg.Manifest, Log: cfg.Log,
+		Engine: cfg.Engine})}
 }
 
 // Run keeps the link up, reconnecting with backoff, until ctx ends.
-func (n *Node) Run(ctx context.Context) error { return n.a.Run(ctx) }
+func (n *Node) Run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go n.a.WatchEngine(ctx)
+	return n.a.Run(ctx)
+}
 
 // SetManifest replaces the manifest; a connected node sends it to the network
 // at once.
