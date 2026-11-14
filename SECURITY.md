@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report privately through
-[GitHub security advisories](https://github.com/Munerate/podtorrent-agent/security/advisories/new).
+[GitHub security advisories](https://github.com/podtorrent/podtorrent-agent/security/advisories/new).
 Do not open a public issue. We aim to reply within three working days.
 
 ## Threat model (summary)

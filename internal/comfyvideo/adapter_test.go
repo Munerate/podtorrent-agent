@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Munerate/podtorrent-agent/internal/comfyvideo"
+	"github.com/podtorrent/podtorrent-agent/internal/comfyvideo"
 )
 
 const workflow = `{

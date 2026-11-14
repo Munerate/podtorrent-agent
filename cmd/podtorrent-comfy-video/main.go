@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Munerate/podtorrent-agent/internal/comfyvideo"
+	"github.com/podtorrent/podtorrent-agent/internal/comfyvideo"
 )
 
 func main() {

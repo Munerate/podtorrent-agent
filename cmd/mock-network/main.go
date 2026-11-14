@@ -7,7 +7,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/Munerate/podtorrent-agent/internal/mocknet"
+	"github.com/podtorrent/podtorrent-agent/internal/mocknet"
 )
 
 func main() {

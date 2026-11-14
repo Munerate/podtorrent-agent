@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/Munerate/podtorrent-agent/internal/agent"
-	"github.com/Munerate/podtorrent-agent/pkg/manifest"
+	"github.com/podtorrent/podtorrent-agent/internal/agent"
+	"github.com/podtorrent/podtorrent-agent/pkg/manifest"
 )
 
 const (

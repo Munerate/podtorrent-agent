@@ -3,7 +3,7 @@ package node
 import (
 	"testing"
 
-	"github.com/Munerate/podtorrent-agent/pkg/manifest"
+	"github.com/podtorrent/podtorrent-agent/pkg/manifest"
 )
 
 func TestStatusFollowsManifest(t *testing.T) {

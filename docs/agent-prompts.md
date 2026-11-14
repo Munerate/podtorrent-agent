@@ -22,7 +22,7 @@ Context: PodTorrent is a network that sends AI inference requests to
 operators' machines. A machine joins by running podtorrent-agent, which
 connects out to the network and forwards requests to a local engine that
 speaks an OpenAI-style HTTP API. The agent's repo is
-https://github.com/Munerate/podtorrent-agent. Clone it (or fetch the files)
+https://github.com/podtorrent/podtorrent-agent. Clone it (or fetch the files)
 and read only what you need:
 - spec/protocol-v0.md, sections "Manifest" and "Video": what a node declares,
   and the job API a video engine must serve.
@@ -54,7 +54,7 @@ Show me the profile; I'll send it to PodTorrent.
 Context: PodTorrent is a network that sends AI inference requests to
 operators' machines. A machine joins by running podtorrent-agent, which
 connects out to the network and forwards requests to a local engine. The
-agent's repo is https://github.com/Munerate/podtorrent-agent; clone it.
+agent's repo is https://github.com/podtorrent/podtorrent-agent; clone it.
 What you need from it:
 - spec/protocol-v0.md, sections "Manifest" and "Video": the contract below.
 - docs/operator-guide.md, "Test before going live".
@@ -114,7 +114,7 @@ Context: PodTorrent is a network that sends AI inference requests to
 operators' machines. A machine joins by running podtorrent-agent, which
 connects out to the network and forwards requests to a local
 OpenAI-compatible engine. The agent's repo is
-https://github.com/Munerate/podtorrent-agent; clone it. Read
+https://github.com/podtorrent/podtorrent-agent; clone it. Read
 docs/operator-guide.md ("What you need", "Manifest reference", "Test before
 going live", "Check conformance") and examples/manifest.json. Build the
 tools with Go 1.24+: `go build -o bin/ ./cmd/...`.

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Munerate/podtorrent-agent/pkg/engine"
-	"github.com/Munerate/podtorrent-agent/pkg/manifest"
+	"github.com/podtorrent/podtorrent-agent/pkg/engine"
+	"github.com/podtorrent/podtorrent-agent/pkg/manifest"
 )
 
 func TestRun(t *testing.T) {

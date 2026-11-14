@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Munerate/podtorrent-agent/internal/agent"
-	"github.com/Munerate/podtorrent-agent/internal/mockengine"
-	"github.com/Munerate/podtorrent-agent/pkg/manifest"
+	"github.com/podtorrent/podtorrent-agent/internal/agent"
+	"github.com/podtorrent/podtorrent-agent/internal/mockengine"
+	"github.com/podtorrent/podtorrent-agent/pkg/manifest"
 )
 
 // Check asks the engine for its models (GET /v1/models) and returns the

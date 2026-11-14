@@ -20,7 +20,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/Munerate/podtorrent-agent/internal/protocol"
+	"github.com/podtorrent/podtorrent-agent/internal/protocol"
 )
 
 type Server struct {

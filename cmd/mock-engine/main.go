@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Munerate/podtorrent-agent/internal/mockengine"
+	"github.com/podtorrent/podtorrent-agent/internal/mockengine"
 )
 
 func main() {

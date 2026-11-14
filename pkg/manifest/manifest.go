@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/Munerate/podtorrent-agent/internal/protocol"
+	"github.com/podtorrent/podtorrent-agent/internal/protocol"
 )
 
 type (

@@ -16,7 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/Munerate/podtorrent-agent/internal/conformance"
+	"github.com/podtorrent/podtorrent-agent/internal/conformance"
 )
 
 func main() {

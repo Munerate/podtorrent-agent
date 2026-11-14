@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Munerate/podtorrent-agent/internal/agent"
-	"github.com/Munerate/podtorrent-agent/internal/protocol"
-	"github.com/Munerate/podtorrent-agent/pkg/manifest"
+	"github.com/podtorrent/podtorrent-agent/internal/agent"
+	"github.com/podtorrent/podtorrent-agent/internal/protocol"
+	"github.com/podtorrent/podtorrent-agent/pkg/manifest"
 )
 
 func main() {

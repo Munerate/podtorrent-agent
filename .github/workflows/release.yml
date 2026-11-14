@@ -50,5 +50,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/munerate/podtorrent-agent:${{ github.ref_name }}
-            ghcr.io/munerate/podtorrent-agent:latest
+            ghcr.io/podtorrent/podtorrent-agent:${{ github.ref_name }}
+            ghcr.io/podtorrent/podtorrent-agent:latest
