@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Munerate/podtorrent-agent/internal/protocol"
+	"github.com/podtorrent/podtorrent-agent/internal/protocol"
 )
 
 // usageTail keeps the end of a response body and reads the token counts from

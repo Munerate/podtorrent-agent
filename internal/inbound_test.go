@@ -11,9 +11,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/Munerate/podtorrent-agent/internal/agent"
-	"github.com/Munerate/podtorrent-agent/internal/mockengine"
-	"github.com/Munerate/podtorrent-agent/internal/protocol"
+	"github.com/podtorrent/podtorrent-agent/internal/agent"
+	"github.com/podtorrent/podtorrent-agent/internal/mockengine"
+	"github.com/podtorrent/podtorrent-agent/internal/protocol"
 )
 
 // In inbound mode the network dials the agent; the protocol on top is the same.

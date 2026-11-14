@@ -1,6 +1,6 @@
 # podtorrent-agent
 
-[![CI](https://github.com/Munerate/podtorrent-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Munerate/podtorrent-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/podtorrent/podtorrent-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/podtorrent/podtorrent-agent/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 The PodTorrent node agent connects **your own OpenAI-compatible inference

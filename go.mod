@@ -1,4 +1,4 @@
-module github.com/Munerate/podtorrent-agent
+module github.com/podtorrent/podtorrent-agent
 
 go 1.24.9
 

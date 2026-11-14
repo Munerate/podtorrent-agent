@@ -11,10 +11,10 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/Munerate/podtorrent-agent/internal/agent"
-	"github.com/Munerate/podtorrent-agent/internal/conformance"
-	"github.com/Munerate/podtorrent-agent/internal/mockengine"
-	"github.com/Munerate/podtorrent-agent/internal/protocol"
+	"github.com/podtorrent/podtorrent-agent/internal/agent"
+	"github.com/podtorrent/podtorrent-agent/internal/conformance"
+	"github.com/podtorrent/podtorrent-agent/internal/mockengine"
+	"github.com/podtorrent/podtorrent-agent/internal/protocol"
 )
 
 // The reference agent must pass its own conformance suite (inbound mode, so

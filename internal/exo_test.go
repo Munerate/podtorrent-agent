@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Munerate/podtorrent-agent/internal/agent"
-	"github.com/Munerate/podtorrent-agent/internal/mockengine"
-	"github.com/Munerate/podtorrent-agent/internal/mocknet"
-	"github.com/Munerate/podtorrent-agent/internal/protocol"
+	"github.com/podtorrent/podtorrent-agent/internal/agent"
+	"github.com/podtorrent/podtorrent-agent/internal/mockengine"
+	"github.com/podtorrent/podtorrent-agent/internal/mocknet"
+	"github.com/podtorrent/podtorrent-agent/internal/protocol"
 )
 
 // fakeExo answers like an exo cluster: state paths say whether the model has

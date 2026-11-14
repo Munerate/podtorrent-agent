@@ -32,11 +32,11 @@ an adapter if your video engine needs one, and test the node locally.
 ## Install
 
 **Binary.** Download the file for your platform from
-[Releases](https://github.com/Munerate/podtorrent-agent/releases)
+[Releases](https://github.com/podtorrent/podtorrent-agent/releases)
 (linux/amd64, linux/arm64, darwin/arm64, windows/amd64) and check it against
 `SHA256SUMS`. Or build it: `make build` (Go 1.24+), output in `bin/`.
 
-**Container.** `ghcr.io/munerate/podtorrent-agent:<version>`. It is distroless,
+**Container.** `ghcr.io/podtorrent/podtorrent-agent:<version>`. It is distroless,
 runs as a non-root user and has no shell.
 
 ## Configure
@@ -137,7 +137,7 @@ docker run -d --name podtorrent-agent --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges \
   -e PODTORRENT_NODE_TOKEN=... \
   -v /etc/podtorrent/manifest.json:/manifest.json:ro \
-  ghcr.io/munerate/podtorrent-agent:<version> \
+  ghcr.io/podtorrent/podtorrent-agent:<version> \
   -manifest /manifest.json -engine http://engine:8000
 ```
 
